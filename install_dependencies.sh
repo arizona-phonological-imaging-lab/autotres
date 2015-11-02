@@ -2,8 +2,9 @@
 
 set -e
 
-apt-get -y install python3-dev python3-pip g++ \
-    libopenblas-dev libhdf5-dev libavbin0
+apt-get -y install python3-dev python3-pip \
+    g++ gfortran libopenblas-dev liblapack-dev \
+    libhdf5-dev libavbin0
 
 # some day ubuntu will release a working CUDA repo
 # until that day comes, we need to get it straight from nvidia
