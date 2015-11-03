@@ -23,11 +23,18 @@
 
 We recommend running the project using a virtual environment. `virtualenv` can be installed with `pip install virtualenv`.
 
-All of the python dependencies are listed under [`requirements.txt`](requirements.txt) and can be installed with the following command:
+1. `virtualenv -p python3 venv`
+2. `source venv/bin/activate`
 
-```
-pip install -r requirements.txt
-```
+## Installation instructions:
+
+1. `pip install -r https://raw.githubusercontent.com/Lasagne/Lasagne/master/requirements.txt`
+2. `pip install https://github.com/Lasagne/Lasagne/archive/master.zip`
+
+The remaining dependencies are listed under [`requirements.txt`](requirements.txt) and can be installed with the following command:
+
+3. `pip install -r requirements.txt`
+
 # Using `autotres`
 
 We provide network training and usage tutorials under [examples](exmaples).
