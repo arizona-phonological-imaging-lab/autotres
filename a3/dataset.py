@@ -255,6 +255,30 @@ def _name_from_info(fname,**kwargs):
     else:
         return np.array(fname[0])
 
+def _audio_from_file(path,frame,n_samples,**kwargs):
+    #note that this only has accuracy to about 1/10 sec, depending on file type
+    with pyglet.media.load(path) as f:
+        sample_rate = f.audio_format.sample_rate
+        if 'frame_rate' in kwargs:
+            frame_rate = kwargs['frame_rate']
+        elif f.video_format:
+            frame_rate = f.video_format.frame_rate
+        else:
+            raise ValueError("Could not intuit frame rate, please specify")
+        sample_size = f.audio_format.sample_size
+        channels = f.audio_format.channels
+        t_frame = frame / frame_rate 
+        t_0 = t_frame - 0.5 * (n_samples/sample_rate)
+        f.seek(t_0)
+        dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
+        a = np.zeros(channels,0)
+        while True:
+            d = f.get_audio_data(n_samples)
+            d = np.fromstring(d.data,dtype=dtype)
+            d = d.reshape(-1,channels).T
+            a = np.append(a,d)
+        return a
+
 _types = {
     'trace': {
         'regex': r'(?P<study>\d+\w+)_(?P<frame>\d+)\.(?:jpg|png)\.(?P<tracer>\w+)\.traced\.txt$',
