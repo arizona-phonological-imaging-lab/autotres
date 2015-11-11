@@ -32,6 +32,7 @@ class Dataset(object):
             'image': _image_from_file,
             'trace': _trace_from_file,
             'name' : _name_from_info,
+            'audio': _audio_from_file,
             }
         if 'dname' in kwargs:
             self.scan_directory(kwargs['dname'],**kwargs)
