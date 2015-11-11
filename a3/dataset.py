@@ -7,6 +7,7 @@ import re
 import hashlib
 import numpy as np
 from PIL import Image
+import pyglet
 try:
     from .errors import ConflictError
 except:
@@ -34,6 +35,10 @@ class Dataset(object):
             }
         if 'dname' in kwargs:
             self.scan_directory(kwargs['dname'],**kwargs)
+        if 'keys' in kwargs:
+            self.keys = kwargs['keys']
+        else:
+            self.keys = None
         if backing.endswith('hdf5'):
             self.__backing = h5py.File(backing)
         else:
@@ -89,6 +94,8 @@ class Dataset(object):
 
     def scan_directory(self,d,types,keys,sep=':',report_every=1000):
         N_matches = 0
+        if self.keys == None:
+            self.keys=keys
         for dirpath,__,filenames in os.walk(d):
           logging.debug('entering %s...',dirpath)
           for filename in filenames:
@@ -98,7 +105,7 @@ class Dataset(object):
                 if match:
                     N_matches += 1
                     if not N_matches % report_every:
-                        logging.debug('matched %d files',N_matches)
+                        logging.info('matched %d files',N_matches)
                     match_keys = match.groupdict()
                     node = self.sources
                     ID = []
@@ -127,7 +134,6 @@ class Dataset(object):
                             if any((k in node for k in match_keys)):
                                 raise Exception
                             node.update(match_keys)
-                            if 'id' not in node: node['id'] = ID
                     elif types[stype]['conflict'] == 'hash':
                         md5 = _hash_md5(fullpath)
                         if 'hash' in node and md5 != node['hash']:
@@ -144,7 +150,6 @@ class Dataset(object):
                                 for k in match_keys)):
                             raise Exception
                         node.update(match_keys)
-                        if 'id' not in node: node['id'] = ID
                     elif types[stype]['conflict'] == 'list':
                         if 'path' not in node:
                             node['path'] = []
@@ -153,34 +158,47 @@ class Dataset(object):
                             if k not in node:
                                 node[k] = []
                             node[k].append(match_keys[k])
-                        if 'id' not in node: node['id'] = ID
                     else:
                         raise NotImplementedError
 
     def read_sources(self,types):
         self.dat = self.__read_sources(self.sources,types,{})
         dat =self.dat
-        ids = {d[k]['id'] for d in dat for k in d}
+        ids = {d['id'] for d in dat}
         N = len(ids)
         self['id'] = np.array(list(ids))
         for d in dat:
-            assert 1==len({d[k]['id'] for k in d})
+            keyvals={}
+            for key in self.keys:
+                vals = set()
+                for i in d:
+                    if key in d[i]:
+                        if type(d[i][key]) == list:
+                            vals.update(d[i][key])
+                        else:
+                            vals.update((d[i][key],))
+                assert len(vals)==1
+                val = vals.pop()
+                for i in d:
+                    keyvals[key]=val
             for k in types:
-                val = self.callbacks[k](**dict(d[k],**self.settings))
+                val = self.callbacks[k](**dict(keyvals,**dict(d[k],**self.settings)))
                 if k not in self:
                     self[k] = (N,) + val.shape
-                i = np.where(self['id'][:] == d[k]['id'])[0][0]
+                i = np.where(self['id'][:] == d['id'])[0][0]
                 self[k][i] = val
 
-    def __read_sources(self,node,types,context):
+    def __read_sources(self,node,types,context,ID=""):
         type_1 = {k:node[k] for k in node if k not in types}
         type_2 = {k:node[k] for k in node if k in types}
         d = dict(context,**type_2)
         if all((x in d for x in types)):
+            d['id']=ID
             return (d,)
         else:
             return [x for k in type_1 
-                    for x in self.__read_sources(type_1[k],types,d)]
+                    for x in self.__read_sources(type_1[k],types,d,"%s:%s"%(ID,k))]
+        
 
 def _hash_md5(fname,buff=1024):
     with open(fname,'rb') as f:
@@ -255,27 +273,32 @@ def _name_from_info(fname,**kwargs):
 
 def _audio_from_file(path,frame,n_samples,**kwargs):
     #note that this only has accuracy to about 1/10 sec, depending on file type
-    with pyglet.media.load(path) as f:
-        sample_rate = f.audio_format.sample_rate
-        if 'frame_rate' in kwargs:
-            frame_rate = kwargs['frame_rate']
-        elif f.video_format:
-            frame_rate = f.video_format.frame_rate
-        else:
-            raise ValueError("Could not intuit frame rate, please specify")
-        sample_size = f.audio_format.sample_size
-        channels = f.audio_format.channels
-        t_frame = frame / frame_rate 
-        t_0 = t_frame - 0.5 * (n_samples/sample_rate)
-        f.seek(t_0)
-        dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
-        a = np.zeros(channels,0)
-        while True:
-            d = f.get_audio_data(n_samples)
-            d = np.fromstring(d.data,dtype=dtype)
-            d = d.reshape(-1,channels).T
-            a = np.append(a,d)
-        return a
+    f=pyglet.media.load(path)
+    sample_rate = f.audio_format.sample_rate
+    if 'frame_rate' in kwargs:
+        frame_rate = kwargs['frame_rate']
+    elif f.video_format and f.video_format.frame_rate:
+        frame_rate = f.video_format.frame_rate
+    else:
+        raise ValueError("Could not intuit frame_rate, please specify.")
+    frame_rate = float(frame_rate)
+    frame = float(frame)
+    n_samples = int(n_samples)
+    sample_size = f.audio_format.sample_size
+    channels = f.audio_format.channels
+    t_frame = frame / frame_rate
+    t_0 = t_frame - 0.5 * (n_samples/sample_rate)
+    f.seek(t_0)
+    dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
+    a = np.zeros((channels,0))
+    while True:
+        d = f.get_audio_data(n_samples)
+        if not d: raise Exception("Reached end of file while extracting audio")
+        d = np.fromstring(d.data,dtype=dtype)
+        d = d.reshape(-1,channels).T
+        a = np.append(a,d,axis=1)
+        if a.shape[1] >= n_samples: break
+    return a[:n_samples]
 
 _types = {
     'trace': {
