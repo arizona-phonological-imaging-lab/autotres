@@ -53,7 +53,7 @@ class Dataset(object):
                     dtype='<U15')
             elif type(self.__backing) == h5py.File:
                 dtype = (h5py.special_dtype(vlen=unicode)
-                     if key.lower() in ['id','name'] else 'f32' )
+                     if key.lower() in ['id','name'] else 'float32' )
                 self.__backing.create_dataset(
                     key,
                     shape=value,
@@ -64,7 +64,7 @@ class Dataset(object):
                 self.__backing[key] = value
             elif type(self.__backing) == h5py.File:
                 dtype = (h5py.special_dtype(vlen=unicode)
-                     if key.lower() in ['id','name'] else 'f32' )
+                     if key.lower() in ['id','name'] else 'float32' )
                 maxshape = (None,) + value.shape[1:]
                 self.__backing.create_dataset(
                     key,
