@@ -118,10 +118,10 @@ class Autotracer(object):
         """
         if self.Xshape == None or self.yshape == None:
             if self.Xshape == None:
-                logging.warning("Tried to compile Neural Net before" +
+                logging.warning("Tried to compile Neural Net before"
                     "setting input dimensionality")
             if self.yshape == None:
-                logging.warning("Tried to compile Neural Net before" +
+                logging.warning("Tried to compile Neural Net before"
                     "setting output dimensionality")
             raise ShapeError(self.Xshpae,self.yshape)
         l_img_in = lasagne.layers.InputLayer(
