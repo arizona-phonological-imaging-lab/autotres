@@ -28,6 +28,7 @@ class Dataset(object):
 
     def __init__(self,backing='dict',**kwargs):
         self.sources = {}
+        self.openfiles = {}
         self.data = None
         self.callbacks = {
             'image': _image_from_file,
@@ -46,6 +47,7 @@ class Dataset(object):
         else:
             self.__backing = {}
         self.settings = kwargs
+        self.settings['__openfiles'] = {}
 
     def __getitem__(self,key):
         return self.__backing[key]
@@ -95,6 +97,7 @@ class Dataset(object):
             pass
 
     def scan_directory(self,d,types,keys,sep=':',report_every=1000):
+        logging.info("scanning %s",d)
         N_matches = 0
         d = get_path(d)
         if self.keys == None:
@@ -165,6 +168,7 @@ class Dataset(object):
                         raise NotImplementedError
 
     def read_sources(self,types):
+        logging.info("started reading sources")
         self.dat = self.__read_sources(self.sources,types,{})
         dat =self.dat
         ids = {d['id'] for d in dat}
@@ -226,8 +230,9 @@ def _image_from_file(path,roi,scale,**kwargs):
     """
     roi = ROI(roi)
     roi_scale = roi.scale(scale)
-    img = Image.open(path)
-    img = img.convert('L')
+    f = Image.open(path)
+    img = f.convert('L')
+    f.close()
     img.thumbnail((img.size[0] * scale, img.size[1] * scale))
     img = np.array(img,dtype='float32')
     img = img / 255
@@ -274,9 +279,11 @@ def _name_from_info(fname,**kwargs):
     else:
         return np.array(fname[0])
 
-def _audio_from_file(path,frame,n_samples,**kwargs):
+def _audio_from_file(path,frame,n_samples,__openfiles,fft=True,**kwargs):
     #note that this only has accuracy to about 1/10 sec, depending on file type
-    f=pyglet.media.load(path)
+    if path not in __openfiles:
+        __openfiles[path] = pyglet.media.load(path)
+    f = __openfiles[path]
     sample_rate = f.audio_format.sample_rate
     if 'frame_rate' in kwargs:
         frame_rate = kwargs['frame_rate']
@@ -301,7 +308,15 @@ def _audio_from_file(path,frame,n_samples,**kwargs):
         d = d.reshape(-1,channels).T
         a = np.append(a,d,axis=1)
         if a.shape[1] >= n_samples: break
-    return a[:n_samples]
+    a = a[:n_samples]
+    a = a / np.iinfo(dtype).max
+    if fft:
+        if fft is True:
+            a = np.fft.rfft(a).real
+        else:
+            a = fft(a)
+    a = (a / n_samples).astype('float32')
+    return a
 
 _types = {
     'trace': {
