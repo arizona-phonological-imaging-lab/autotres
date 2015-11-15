@@ -1,19 +1,32 @@
-#sudo: false
+sudo: false
 os:
   - linux
   - osx
 
+cache:
+  - apt
+  - directories:
+    - $HOME/.cache/pip
+    - $HOME/.theano
+
 matrix:
   allow_failures:
     - os: osx
-# addons:
-#    apt:
-#      sources:
-#        - ubuntu-toolchain-r-test
-#      packages:
-#       - gfortran
-#       - libopenblas-dev
-#       - nvidia-cuda-toolkit
+
+addons:
+  apt:
+    packages:
+      - build-essential
+      - gcc
+      - python3-dev
+      - libatlas-dev
+      - libatlas-base-dev
+      - liblapack-dev
+      - libblas-dev
+      - libhdf5-serial-dev
+      - gfortran
+      - nvidia-cuda-toolkit
+      - cuda
 
 virtualenv:
   system_site_packages: false
@@ -30,27 +43,10 @@ install:
   #- source venv/bin/activate
   # ensure that Cython get installed first
   - pip install Cython
-  - travis_wait pip install -r requirements.txt
+  - travis_wait travis_retry pip install -r requirements.txt
 
 #sudo apt-get install libhdf5-dev;
 before_install:
-  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
-       sudo apt-get update;
-       sudo apt-get install build-essential;
-       sudo apt-get install gcc;
-       sudo apt-get install python3-dev;
-       sudo apt-get install libhdf5-serial-dev;
-       sudo apt-get install gfortran;
-       sudo apt-get build-dep libopenblas-dev;
-       sudo apt-get install liblapack-dev;
-       sudo apt-get install libblas-dev;
-       sudo apt-get build-dep nvidia-cuda-toolkit;
-       sudo apt-get install python3-scipy;
-       sudo apt-get install python3-numpy;
-       export BLAS=/usr/local/lib/libopenblas.a;
-       export LAPACK=/usr/local/lib/libopenblas.a;
-       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/;
-    fi
   - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
        brew update;
        brew install python3;
