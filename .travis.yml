@@ -30,7 +30,7 @@ install:
   #- source venv/bin/activate
   # ensure that Cython get installed first
   - pip install Cython
-  - pip install -r requirements.txt
+  - travis_wait pip install -r requirements.txt
 
 #sudo apt-get install libhdf5-dev;
 before_install:
@@ -41,11 +41,15 @@ before_install:
        sudo apt-get install python3-dev;
        sudo apt-get install libhdf5-serial-dev;
        sudo apt-get install gfortran;
+       sudo apt-get build-dep libopenblas-dev;
        sudo apt-get install liblapack-dev;
        sudo apt-get install libblas-dev;
        sudo apt-get build-dep nvidia-cuda-toolkit;
        sudo apt-get install python3-scipy;
        sudo apt-get install python3-numpy;
+       export BLAS=/usr/local/lib/libopenblas.a;
+       export LAPACK=/usr/local/lib/libopenblas.a;
+       export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/lib/;
     fi
   - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
        brew update;
