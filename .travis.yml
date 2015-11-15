@@ -41,10 +41,10 @@ install:
   #- virtualenv -p python3 venv
   #- source venv/bin/activate
   # ensure that Cython get installed first
-  - pip install Cython
-  - travis_wait travis_retry pip install -r requirements.txt
+  #- pip install Cython
   # install package
-  - pip install -e .
+  - travis_wait travis_retry pip install -e .
+
 
 #sudo apt-get install libhdf5-dev;
 before_install:
