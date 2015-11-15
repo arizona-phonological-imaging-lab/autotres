@@ -1,5 +1,7 @@
 # autotres
 
+<!-- [![Build Status](https://travis-ci.org/arizona-phonological-imaging-lab/autotres.svg?branch=master)](https://travis-ci.org/arizona-phonological-imaging-lab/autotres)-->
+
 ## What is it?
 `autotres` is a collection of tools to analyze tongue surface contours in ultrasound images.
 
@@ -28,16 +30,47 @@ We recommend running the project using a virtual environment. `virtualenv` can b
 
 ## Installation instructions:
 
-1. `pip install -r https://raw.githubusercontent.com/Lasagne/Lasagne/master/requirements.txt`
-2. `pip install https://github.com/Lasagne/Lasagne/archive/master.zip`
+### System dependencies
 
+
+#### OSX
+
+The system dependencies can be installed via `homebrew`:
+
+```
+brew update;
+brew install python3;
+brew install gfortran;
+brew tap homebrew/science;
+brew install openblas;
+brew install hdf5;
+```
+
+#### Linux
+
+```
+sudo apt-get update;
+sudo apt-get install build-essential;
+sudo apt-get install gcc;
+sudo apt-get install python3-dev;
+sudo apt-get install libhdf5-dev;
+sudo apt-get install gfortran;
+sudo apt-get build-dep libopenblas-dev;
+sudo apt-get build-dep nvidia-cuda-toolkit;
+```
+
+### Installing the Python dependencies
 The remaining dependencies are listed under [`requirements.txt`](requirements.txt) and can be installed with the following command:
 
-3. `pip install -r requirements.txt`
+1. `pip install -r requirements.txt`
+
+Finally, install `autotres`:
+
+2. `pip install -e .`
 
 # Using `autotres`
 
-We provide network training and usage tutorials under [examples](exmaples).
+We provide network training and usage tutorials under [examples](examples).
 
 ## Training networks
 
