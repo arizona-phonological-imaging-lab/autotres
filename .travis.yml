@@ -36,7 +36,6 @@ python:
   - "3.5.0"
 
 # command to install dependencies
-
 install:
   # enforce virtualenv
   #- virtualenv -p python3 venv
@@ -55,9 +54,12 @@ before_install:
        brew install openblas;
        brew install hdf5;
     fi
+
 # command to run tests
 # script: nosetests
 
 notifications:
-  email:
+  on_success: change
+  on_failure: change
+  recipients:
     - hahnpowell@email.arizona.edu
