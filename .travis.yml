@@ -30,15 +30,16 @@ install:
   #- source venv/bin/activate
   # ensure that Cython get installed first
   - pip install Cython
-  - pip install h5py
   - pip install -r requirements.txt
 
 before_install:
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
        sudo apt-get update;
        sudo apt-get install build-essential;
+       sudo apt-get install gcc;
        sudo apt-get install python3-dev;
-       sudo apt-get install libhdf5-dev;
+       sudo apt-get install libhdf5-serial-dev;
+       #sudo apt-get install libhdf5-dev;
        sudo apt-get install gfortran;
        sudo apt-get build-dep libopenblas-dev;
        sudo apt-get build-dep nvidia-cuda-toolkit;
