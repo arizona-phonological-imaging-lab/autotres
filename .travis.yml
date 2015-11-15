@@ -10,7 +10,15 @@ python:
    - "3.5"
 
 # command to install dependencies
-install: pip install -r requirements.txt
+
+install: 
+    # enforce virtualenv
+    - virtualenv -p python3 venv
+    - source venv/bin/activate 
+    # ensure that Cython get installed first
+    - pip install Cython
+    - pip install h5py
+    - pip install -r requirements.txt
 
 before_install:
     - if [ "$TRAVIS_OS_NAME" = "linux" ]; then 
