@@ -53,7 +53,7 @@ class Dataset(object):
                     dtype='<U15')
             elif type(self.__backing) == h5py.File:
                 dtype = (h5py.special_dtype(vlen=unicode)
-                     if key.lower() in ['id','name'] else 'f32' )
+                     if key.lower() in ['id','name'] else 'float32' )
                 self.__backing.create_dataset(
                     key,
                     shape=value,
@@ -64,7 +64,7 @@ class Dataset(object):
                 self.__backing[key] = value
             elif type(self.__backing) == h5py.File:
                 dtype = (h5py.special_dtype(vlen=unicode)
-                     if key.lower() in ['id','name'] else 'f32' )
+                     if key.lower() in ['id','name'] else 'float32' )
                 maxshape = (None,) + value.shape[1:]
                 self.__backing.create_dataset(
                     key,
@@ -79,7 +79,7 @@ class Dataset(object):
 
     def __contains__(self,item):
         return item in self.__backing
-    
+
     def __exit__(self):
         try:
             self.__backing.close()
@@ -111,7 +111,7 @@ class Dataset(object):
                             break
                     if stype not in node:
                         node[stype] = {}
-                    node = node[stype] 
+                    node = node[stype]
                     ID = sep.join(ID)
                     #insert
                     if 'conflict' not in types[stype] or types[stype]['conflict']==None:
@@ -139,7 +139,7 @@ class Dataset(object):
                                                 node['path'],fullpath)
                         node['path'] = fullpath
                         node['hash'] = md5
-                        if any((k in node and node[k] != match_keys[k] 
+                        if any((k in node and node[k] != match_keys[k]
                                 for k in match_keys)):
                             raise Exception
                         node.update(match_keys)
@@ -178,7 +178,7 @@ class Dataset(object):
         if all((x in d for x in types)):
             return (d,)
         else:
-            return [x for k in type_1 
+            return [x for k in type_1
                     for x in self.__read_sources(type_1[k],types,d)]
 
 def _hash_md5(fname,buff=1024):
@@ -234,7 +234,7 @@ def _trace_from_file(path,roi,n_points,**kwargs):
                 gold_ys.append(float(l[2]))
     gold_xs = np.array(gold_xs,dtype='float32')
     gold_ys = np.array(gold_ys,dtype='float32')
-    if len(gold_xs) > 0: 
+    if len(gold_xs) > 0:
         trace = np.interp(roi.domain(n_points),gold_xs,gold_ys,left=0,right=0)
         trace = trace.reshape((n_points,1,1))
         trace[trace==0] = roi.offset[0]
@@ -243,14 +243,14 @@ def _trace_from_file(path,roi,n_points,**kwargs):
         return np.array(0)
     if trace.sum() > 0 :
         return trace
-    else: 
+    else:
         return np.array(0)
 
 def _name_from_info(fname,**kwargs):
-    try:
-        return np.array(fname[0])
-    except TypeError:
+    if type(fname) is str:
         return np.array(fname)
+    else:
+        return np.array(fname[0])
 
 _types = {
     'trace': {
