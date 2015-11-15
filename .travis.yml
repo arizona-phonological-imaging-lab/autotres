@@ -1,42 +1,55 @@
+#sudo: false
 os:
-   - linux
-   - osx
+  - linux
+  - osx
+
+matrix:
+  allow_failures:
+    - os: osx
+# addons:
+#    apt:
+#      sources:
+#        - ubuntu-toolchain-r-test
+#      packages:
+#       - gfortran
+#       - libopenblas-dev
+#       - nvidia-cuda-toolkit
 
 #virtualenv:
 #  system_site_packages: false
 
 language: python
 python:
-   - "3.5"
+  - "3.5.0"
 
 # command to install dependencies
 
-install: 
-    # enforce virtualenv
-    - virtualenv -p python3 venv
-    - source venv/bin/activate 
-    # ensure that Cython get installed first
-    - pip install Cython
-    - pip install h5py
-    - pip install -r requirements.txt
+install:
+  # enforce virtualenv
+  - virtualenv -p python3 venv
+  - source venv/bin/activate
+  # ensure that Cython get installed first
+  - pip install Cython
+  - pip install h5py
+  - pip install -r requirements.txt
 
 before_install:
-    - if [ "$TRAVIS_OS_NAME" = "linux" ]; then 
-         sudo apt-get update; 
-         sudo apt-get install gfortran;
-         sudo apt-get build-dep libopenblas-dev;
-         sudo apt-get build-dep nvidia-cuda-toolkit;
-      fi
-    - if [ "$TRAVIS_OS_NAME" = "osx" ]; then 
-         brew update; 
-         brew install python3;
-         brew install gfortran;
-         brew tap homebrew/science;
-         brew install openblas;
-      fi
+  - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
+       sudo apt-get update;
+       sudo apt-get install gfortran;
+       sudo apt-get build-dep libopenblas-dev;
+       sudo apt-get build-dep nvidia-cuda-toolkit;
+    fi
+  - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
+       brew update;
+       brew install python3;
+       brew install gfortran;
+       brew tap homebrew/science;
+       brew install openblas;
+    fi
 # command to run tests
 # script: nosetests
 
 notifications:
-   email:
-      - hahnpowell@email.arizona.edu
+  email:
+    - hahnpowell@email.arizona.edu
