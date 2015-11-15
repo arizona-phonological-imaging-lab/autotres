@@ -114,7 +114,7 @@ class Dataset(object):
                     node = node[stype] 
                     ID = sep.join(ID)
                     #insert
-                    if 'conflict' not in types[stype]:
+                    if 'conflict' not in types[stype] or types[stype]['conflict']==None:
                         if 'path' in node:
                             logging.error(
                                 '%s conflicts with %s for item %s, type %s',
