@@ -15,8 +15,8 @@ matrix:
 #       - libopenblas-dev
 #       - nvidia-cuda-toolkit
 
-#virtualenv:
-#  system_site_packages: false
+virtualenv:
+  system_site_packages: true
 
 language: python
 python:
@@ -43,6 +43,8 @@ before_install:
        sudo apt-get install gfortran;
        sudo apt-get build-dep libopenblas-dev;
        sudo apt-get build-dep nvidia-cuda-toolkit;
+       sudo apt-get install python-scipy;
+       sudo apt-get install python-numpy;
     fi
   - if [ "$TRAVIS_OS_NAME" = "osx" ]; then
        brew update;
