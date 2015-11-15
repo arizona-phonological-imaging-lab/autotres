@@ -59,18 +59,26 @@ sudo apt-get build-dep libopenblas-dev;
 sudo apt-get build-dep nvidia-cuda-toolkit;
 ```
 
-### Installing the Python dependencies
-The remaining dependencies are listed under [`requirements.txt`](requirements.txt) and can be installed with the following command:
+### Installing the `autores` and its Python dependencies:
 
-1. `pip install -r requirements.txt`
-
-Finally, install `autotres`:
-
-2. `pip install -e .`
+```
+pip install -e .
+```
 
 # Using `autotres`
 
 We provide network training and usage tutorials under [examples](examples).
+
+
+## Example data
+
+You will need [`git-lfs`](https://git-lfs.github.com) to pull the example data.
+
+Once you've installed `git-lfs`, simply run this command:
+
+```
+git-lfs fetch
+```
 
 ## Training networks
 
@@ -82,9 +90,9 @@ The code for training deep networks uses [`Lasagne`](https://github.com/Lasagne/
 
 ### CPU-based training
 
-If no GPU is present, `Theano` will use the CPU. For best results, a `BLAS` library with multithreading support is suggested, such as [`OpenBLAS`](http://www.openblas.net).
+If no GPU is present, `Theano` will use the CPU. For best results, a `BLAS` library with multithreading support is suggested, such as ['BLAS'](http://www.netlib.org/blas/) or [`OpenBLAS`](http://www.openblas.net).
 
 
 # What's missing?
 
-Currently, the project lacks a graphical interface, and has only been tested on Ubuntu 14.04. With luck, future versions will rectify these shortcomings.
+Currently, the project lacks a graphical interface, and has only been tested on Ubuntu 14.04 and OSX 10.11. With luck, future versions will rectify these shortcomings.
