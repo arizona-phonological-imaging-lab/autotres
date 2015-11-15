@@ -36,6 +36,7 @@ install:
 before_install:
   - if [ "$TRAVIS_OS_NAME" = "linux" ]; then
        sudo apt-get update;
+       sudo apt-get install libhdf5-dev;
        sudo apt-get install gfortran;
        sudo apt-get build-dep libopenblas-dev;
        sudo apt-get build-dep nvidia-cuda-toolkit;
@@ -46,6 +47,7 @@ before_install:
        brew install gfortran;
        brew tap homebrew/science;
        brew install openblas;
+       brew install hdf5;
     fi
 # command to run tests
 # script: nosetests
