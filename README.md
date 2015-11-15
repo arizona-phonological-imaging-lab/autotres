@@ -1,6 +1,6 @@
 # autotres
 
-<!-- [![Build Status](https://travis-ci.org/arizona-phonological-imaging-lab/autotres.svg?branch=master)](https://travis-ci.org/arizona-phonological-imaging-lab/autotres)-->
+[![Build Status](https://travis-ci.org/arizona-phonological-imaging-lab/autotres.svg?branch=master)](https://travis-ci.org/arizona-phonological-imaging-lab/autotres)
 
 ## What is it?
 `autotres` is a collection of tools to analyze tongue surface contours in ultrasound images.
