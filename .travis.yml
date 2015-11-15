@@ -58,7 +58,7 @@ before_install:
     fi
 
 # command to run tests
-script: nosetests
+script: nosetests --nocapture
 
 notifications:
   on_success: change
