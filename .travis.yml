@@ -1,0 +1,28 @@
+os:
+   - linux
+   - osx
+
+language: python
+python:
+   - "3.5"
+
+# command to install dependencies
+install: pip install -r requirements.txt
+
+before_install:
+    - if [ "$TRAVIS_OS_NAME" = "linux" ]; then 
+         sudo apt-get update; 
+         sudo apt-get build-dep libopenblas-dev;
+         sudo apt-get build-dep nvidia-cuda-toolkit;
+      fi
+    - if [ "$TRAVIS_OS_NAME" = "osx" ]; then 
+         brew update; 
+         brew tap homebrew/science;
+         brew install openblas;
+      fi
+# command to run tests
+# script: nosetests
+
+notifications:
+   email:
+      - hahnpowell@email.arizona.edu
