@@ -19,8 +19,8 @@ matrix:
 #  system_site_packages: false
 
 language: python
-#python:
-#  - "3.5.0"
+python:
+  - "3.5.0"
 
 # command to install dependencies
 
