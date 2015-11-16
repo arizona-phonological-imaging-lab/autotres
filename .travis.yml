@@ -43,7 +43,7 @@ install:
   # ensure that Cython get installed first
   #- pip install Cython
   # install package
-  - travis_wait travis_retry pip install -e .
+  - travis_wait travis_retry pip install -Ue .
 
 
 #sudo apt-get install libhdf5-dev;
