@@ -16,6 +16,8 @@ try:
 except:
     from roi import ROI
 
+from .utils import get_path
+
 try: # for python2/3 compatibility
     unicode
 except NameError:
@@ -34,7 +36,7 @@ class Dataset(object):
         if 'dname' in kwargs:
             self.scan_directory(kwargs['dname'],**kwargs)
         if backing.endswith('hdf5'):
-            self.__backing = h5py.File(backing)
+            self.__backing = h5py.File(get_path(backing))
         else:
             self.__backing = {}
         self.settings = kwargs
@@ -88,6 +90,7 @@ class Dataset(object):
 
     def scan_directory(self,d,types,keys,sep=':',report_every=1000):
         N_matches = 0
+        d = get_path(d)
         for dirpath,__,filenames in os.walk(d):
           logging.debug('entering %s...',dirpath)
           for filename in filenames:

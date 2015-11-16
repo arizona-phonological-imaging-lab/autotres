@@ -5,7 +5,8 @@ from __future__ import absolute_import, division
 from .roi import ROI
 from .errors import ShapeError
 from .constants import _version
-
+from .struct import LossRecord
+from .utils import get_path
 import json
 import logging
 
@@ -20,8 +21,8 @@ import theano.tensor as T
 import lasagne
 
 class Autotracer(object):
-    """Automatically traces tongues in Ultracound images.
-    
+    """Automatically traces tongues in Ultrasound images.
+
     Attributes (all read-only):
         roi (ROI): Where the ultrasound images the data represent.
         X_train (tensor of float32): the training dataset images.
@@ -45,8 +46,6 @@ class Autotracer(object):
     """
     def __init__(self,train,test,roi):
         """
-        Currently, saving and loading autotracers is not supported, 
-        so only one constructor syntax is supported. 
 
         Args:
             train (string): the location of a hdf5 dataset for training
@@ -55,7 +54,10 @@ class Autotracer(object):
                 this gets loaded as X_valid and y_valid
             roi (ROI): the location of the data within an image
         """
-        self.loadHDF5(train,test)
+        # clean up paths
+        train = get_path(train)
+        test = get_path(test) if test else test
+        self.loadHDF5(train, test)
         self.roi = ROI(roi)
         self.__init_model()
 
@@ -72,6 +74,9 @@ class Autotracer(object):
             ShapeError: if train and test have incompatible shape
                 Xshape and yshape are set to the shape of test
         """
+        # clean up paths
+        train = get_path(train)
+        test = get_path(test) if test else test
         logging.debug('loadHDF5(%s,%s)' % (train,test))
         with h5py.File(train,'r') as h:
             self.X_train = np.array(h['image'])
@@ -82,8 +87,8 @@ class Autotracer(object):
             with h5py.File(test,'r') as h:
                 self.X_valid = np.array(h['image'])
                 self.y_valid = np.array(h['trace'])
-        else: 
-            # split the training data into a training set and a validation set. 
+        else:
+            # split the training data into a training set and a validation set.
             i = np.floor(self.X_train.shape[0] * 0.75)
             self.X_valid = self.X_train[i:]
             self.y_valid = self.y_train[i:]
@@ -101,7 +106,7 @@ class Autotracer(object):
 
     def __init_layers(self,layer_size):
         """Create the architecture of the MLP
-        
+
         The achitecture is currently hard-coded.
         Architecture:
             image -> ReLU w/ dropout (x3) -> trace
@@ -160,7 +165,7 @@ class Autotracer(object):
 
     def __init_model(self,layer_size=2048):
         """Initializes the model
-        
+
         For the most part, this consists of setting up some bookkeeping
         for theano and lasagne, and compiling the theano functions
         Args:
@@ -170,27 +175,27 @@ class Autotracer(object):
         logging.info('initializing model')
         self.__init_layers(layer_size)
 
-        # These are theano/lasagne symbolic variable declarationss, 
+        # These are theano/lasagne symbolic variable declarationss,
         # representing... the target vector(traces)
         target_vector = T.fmatrix('y')
         # the loss (diff in objective) for training
-        stochastic_loss = lasagne.objectives.squared_error( 
+        stochastic_loss = lasagne.objectives.squared_error(
             lasagne.layers.get_output(self.layer_out),target_vector).mean()
         # the loss for validation
-        deterministic_loss = lasagne.objectives.squared_error( 
+        deterministic_loss = lasagne.objectives.squared_error(
             lasagne.layers.get_output(self.layer_out,
             deterministic=True),target_vector).mean()
         # the network parameters (i.e. weights)
-        all_params = lasagne.layers.get_all_params( 
+        all_params = lasagne.layers.get_all_params(
             self.layer_out)
         # how to update the weights
-        updates = lasagne.updates.nesterov_momentum( 
-            loss_or_grads = stochastic_loss, 
+        updates = lasagne.updates.nesterov_momentum(
+            loss_or_grads = stochastic_loss,
             params = all_params,
             learning_rate = 0.1,
             momentum = 0.9)
-        
-        # The theano functions for training, testing, and tracing. 
+
+        # The theano functions for training, testing, and tracing.
         #   These get method-level wrappers below
         logging.info('compiling theano functions')
         self._train_fn = theano.function(
@@ -205,12 +210,12 @@ class Autotracer(object):
             inputs  = [self.layer_in.input_var],
             outputs = [lasagne.layers.get_output(self.layer_out)
                 * self.roi.shape[0] + self.roi.offset[0]])
-    
+
     def train_batch(self, X, y):
-        """Train on a minibatch 
-        
+        """Train on a minibatch
+
         Wrapper for _train_fn()
-        
+
         Args:
             X (tensor of float32): Minibatch from the training images
             y (tensor of float32): The corresponding traces
@@ -231,7 +236,7 @@ class Autotracer(object):
     def trace(self, X, jfile=None,names=None,project_id=None,subject_id=None):
         """Trace a batch of images using the MLP
 
-        Can be used programmatically to get a numpy array of traces, 
+        Can be used programmatically to get a numpy array of traces,
         or a json file for use with the APIL webapp.
         Args:
             X (tensor of float32): image to be traced
@@ -260,17 +265,19 @@ class Autotracer(object):
                 'project-id' : project_id,
                 'subject-id' : subject_id}
             js['trace-data'] = {names[i]: [{'x': domain[j], 'y': float(t[i,j])}
-                for j in range(len(domain)) if 
+                for j in range(len(domain)) if
                 float(t[i,j]) != self.roi.offset[1]] for i in range(len(t))}
             with open(jfile,'w') as f:
                 json.dump(js,f)
         return t
 
     def save(self,fname):
+        fname = get_path(fname)
         params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
         np.save(fname,params)
 
     def load(self,fname):
+        fname = get_path(fname)
         params = np.load(fname)
         lasagne.layers.set_all_param_values(self.layer_out,params)
 
@@ -278,11 +285,13 @@ class Autotracer(object):
         """Train the MLP using minibatches
 
         Args:
-            num_epochs (int): Number of times to run through the 
+            num_epochs (int): Number of times to run through the
                 training set during each epoch.
             batch_size (int): Number of images to calculate updates on
         """
         logging.info('Training')
+        # keep track of (epoch + 1, train_loss, valid_loss)
+        self.loss_record = LossRecord()
         for epoch_num in range(num_epochs):
             num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
             train_losses = []
@@ -306,6 +315,7 @@ class Autotracer(object):
                 valid_losses.append(loss)
                 list_of_traces_batch.append(traces_batch)
             valid_loss = np.mean(valid_losses)
+            # store loss
+            self.loss_record += [epoch_num+1, train_loss, valid_loss]
             logging.info('Epoch: %d, train_loss=%f, valid_loss=%f'
-                    % (epoch_num+1, train_loss, valid_loss))    
-
+                    % (epoch_num+1, train_loss, valid_loss))
