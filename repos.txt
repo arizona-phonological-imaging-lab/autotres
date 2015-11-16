@@ -1,2 +1,2 @@
 https://github.com/Lasagne/Lasagne/archive/master.zip
-https://github.com/mwaskom/seaborn/archive/master.zip
+https://github.com/mwaskom/seaborn/tarball/master#egg=seaborn-0.7.0dev
