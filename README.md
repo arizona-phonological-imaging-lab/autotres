@@ -59,7 +59,7 @@ sudo apt-get build-dep libopenblas-dev;
 sudo apt-get build-dep nvidia-cuda-toolkit;
 ```
 
-### Installing the `autores` and its Python dependencies:
+### Installing `autotres` and its Python dependencies:
 
 ```
 pip install -e .
