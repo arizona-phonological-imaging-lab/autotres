@@ -181,10 +181,17 @@ class Autotracer(object):
         # the loss (diff in objective) for training
         stochastic_loss = lasagne.objectives.squared_error(
             lasagne.layers.get_output(self.layer_out),target_vector).mean()
+        # use cross entropy
+        # stochastic_loss = lasagne.objectives.cross_entropy(
+        #                 lasagne.layers.get_output(self.layer_out),target_vector).mean()
         # the loss for validation
         deterministic_loss = lasagne.objectives.squared_error(
             lasagne.layers.get_output(self.layer_out,
             deterministic=True),target_vector).mean()
+        # use cross entropy
+        # deterministic_loss = lasagne.objectives.squared_error(
+        #     lasagne.layers.get_output(self.layer_out,
+        #     deterministic=True),target_vector).mean()
         # the network parameters (i.e. weights)
         all_params = lasagne.layers.get_all_params(
             self.layer_out)
