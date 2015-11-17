@@ -178,20 +178,18 @@ class Autotracer(object):
         # These are theano/lasagne symbolic variable declarationss,
         # representing... the target vector(traces)
         target_vector = T.fmatrix('y')
+        # our predictions
+        predictions = lasagne.layers.get_output(self.layer_out)
+        validation_predictions = lasagne.layers.get_output(self.layer_out, deterministic=True)
         # the loss (diff in objective) for training
-        stochastic_loss = lasagne.objectives.squared_error(
-            lasagne.layers.get_output(self.layer_out),target_vector).mean()
-        # use cross entropy
-        # stochastic_loss = lasagne.objectives.cross_entropy(
-        #                 lasagne.layers.get_output(self.layer_out),target_vector).mean()
+        # using MSE
+        stochastic_loss = lasagne.objectives.squared_error(predictions, target_vector).mean()
+        #print(stochastic_loss)
+        deterministic_loss = lasagne.objectives.squared_error(validation_predictions, target_vector).mean()
+        # using cross entropy
+        #stochastic_loss = lasagne.objectives.categorical_crossentropy(predictions, target_vector).mean()
         # the loss for validation
-        deterministic_loss = lasagne.objectives.squared_error(
-            lasagne.layers.get_output(self.layer_out,
-            deterministic=True),target_vector).mean()
-        # use cross entropy
-        # deterministic_loss = lasagne.objectives.squared_error(
-        #     lasagne.layers.get_output(self.layer_out,
-        #     deterministic=True),target_vector).mean()
+        #deterministic_loss = lasagne.objectives.categorical_crossentropy(test_predictions, target_vector).mean()
         # the network parameters (i.e. weights)
         all_params = lasagne.layers.get_all_params(
             self.layer_out)
