@@ -1,13 +1,6 @@
 import os
 import re
-
-
-def get_path(p):
-    """
-    expand a user-specified path.  Supports "~" shortcut.
-    """
-    return os.path.normpath(os.path.expanduser(p))
-
+import yaml
 
 # The standard directory structure of older APIL projects
 apil_old = {
@@ -34,3 +27,24 @@ apil_old = {
             )$""",
         }
     }
+
+def get_path(p):
+    """
+    expand a user-specified path.  Supports "~" shortcut.
+    """
+    return os.path.normpath(os.path.expanduser(p))
+    
+class Config(dict):
+    """
+    A storage class for the yaml-defined network configuration
+    """
+    def __init__(self, f):
+        # Access the keys of the yaml dict as class attributes (i.e. .attributeName)
+        super(Config, self).__init__(**self.load_config(f))
+        self.__dict__ = self
+
+    def load_config(self, f):
+        """
+        Expand the path to the yaml-defined conf.
+        """
+        return yaml.load(open(get_path(f),"r"))

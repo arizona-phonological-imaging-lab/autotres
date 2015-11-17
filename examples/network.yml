@@ -1,0 +1,97 @@
+# Where to save the trained network's weights
+output_network: "~/repos/APIL/autotres/examples/original.npy"
+# the Region of Interest
+roi: [140.,320.,250.,580.]
+# how to scale the ROI
+scale_factor: .1
+
+#######################
+# training information
+#######################
+train: True
+# should the hdf5 db be built?
+build_training_db: False
+# the input to be used to populate the hdf5 db
+training_directory: "~/repos/APIL/autotres/examples/HS_diverse_800_50"
+# what to call/where to write the hdf5 db
+training_db: "~/repos/APIL/autotres/examples/HS_diverse_800_50.hdf5"
+# the number of epochs for training
+epochs: 3
+# The number of points the network should produce when tracing
+out_points: 32
+# The filename of the plot showing training and validation loss
+figname: "~/repos/APIL/autotres/examples/training-loss-3000-epochs.png"
+# the db keys to use for training
+keys: ['study', 'frame']
+# this entry describes the structure of the training directory
+training:
+  trace:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)                           # comments within the (?x) regex are ignored
+          (?P<study>\d+\w+)              # in the example dataset, a 'study' is encoded in the image name as the substring preceding an '_'
+          _(?P<frame>\d+)\.(?:jpg|png)   # the frame number
+          \.(?P<tracer>\w+)              # the tracer id
+          \.traced\.txt$
+    conflict: 'list'
+  image:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)
+          (?P<study>\d+\w+)
+          _(?P<frame>\d+)
+          \.(?P<ext>jpg|png)$
+    conflict: 'hash'
+  name:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)
+          (?P<fname>(?P<study>\d+\w+)
+              _(?P<frame>\d+)
+              \.(?P<ext>jpg|png)
+          )$
+
+
+#######################
+# test information
+#######################
+test: False
+# should the hdf5 db be built?
+build_testing_db: False
+# the input to be used to populate the hdf5 db
+testing_directory: "~/repos/APIL/autotres/examples/test_data"
+# what to call/where to write the hdf5 db
+testing_db: "~/repos/APIL/autotres/examples/test.hdf5"
+# where should the output be saved?
+test_out: "~/repos/APIL/autotres/examples/test_out.json"
+# the name of the tracer
+tracer: 'autotrace_test'
+# the subject id
+subject_id: "001"
+# this entry describes the structure of the training directory
+testing:
+  trace:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)                           # comments within the (?x) regex are ignored
+          (?P<study>\d+\w+)              # in the example dataset, a 'study' is encoded in the image name as the substring preceding an '_'
+          _(?P<frame>\d+)\.(?:jpg|png)   # the frame number
+          \.(?P<tracer>\w+)              # the tracer id
+          \.traced\.txt$
+    conflict: 'list'
+  image:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)
+          (?P<study>\d+\w+)
+          _(?P<frame>\d+)
+          \.(?P<ext>jpg|png)$
+    conflict: 'hash'
+  name:
+    # Do not quote this pattern.  It will cause problems when parsed
+    regex: |
+          (?x)
+          (?P<fname>(?P<study>\d+\w+)
+              _(?P<frame>\d+)
+              \.(?P<ext>jpg|png)
+          )$
