@@ -13,13 +13,17 @@ if [ ! -e 'cuda-repo-ubuntu1404-7-5-local_7.5-18_amd64.deb' ]; then
 fi
     dpkg -i 'cuda-repo-ubuntu1404-7-5-local_7.5-18_amd64.deb'
     apt-get update
-    apt-get -y install cuda
+    apt-get -y install cuda-driver-dev-7-5
+    apt-get -y install nvidia-opencl-icd-352
+    apt-get -y install cuda-drivers
+    apt-get -y install cuda-runtime-7.5
+    apt-get -y install cuda-7.5
     echo 'export PATH="$PATH:/usr/local/cuda/bin"' > '/etc/profile.d/cuda.sh'
     echo '/usr/local/cuda/lib64/' > '/etc/ld.so.conf.d/cuda.conf'
     rm -f 'cuda-repo-ubuntu1404-7-5-local_7.5-18_amd64.deb'
     ldconfig
 
-pip3 install -r requirements.txt
+pip3 install -e . #r requirements.txt
 
 echo Autotrace dependencies successfully installed.
 echo   You may have to reboot before GPU acceleration will work.
