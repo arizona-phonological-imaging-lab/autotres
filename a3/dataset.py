@@ -318,6 +318,45 @@ def _audio_from_file(path,frame,n_samples,__openfiles,fft=True,**kwargs):
     a = (a / n_samples).astype('float32')
     return a
 
+def _audio_from_file(path,frame,n_samples,__openfiles,fft=True,**kwargs):
+    #note that this only has accuracy to about 1/10 sec, depending on file type
+    if path not in __openfiles:
+        __openfiles[path] = pyglet.media.load(path)
+    f = __openfiles[path]
+    sample_rate = f.audio_format.sample_rate
+    if 'frame_rate' in kwargs:
+        frame_rate = kwargs['frame_rate']
+    elif f.video_format and f.video_format.frame_rate:
+        frame_rate = f.video_format.frame_rate
+    else:
+        raise ValueError("Could not intuit frame_rate, please specify.")
+    frame_rate = float(frame_rate)
+    frame = float(frame)
+    n_samples = int(n_samples)
+    sample_size = f.audio_format.sample_size
+    channels = f.audio_format.channels
+    t_frame = frame / frame_rate
+    t_0 = t_frame - 0.5 * (n_samples/sample_rate)
+    f.seek(t_0)
+    dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
+    a = np.zeros((channels,0))
+    while True:
+        d = f.get_audio_data(n_samples)
+        if not d: raise Exception("Reached end of file while extracting audio")
+        d = np.fromstring(d.data,dtype=dtype)
+        d = d.reshape(-1,channels).T
+        a = np.append(a,d,axis=1)
+        if a.shape[1] >= n_samples: break
+    a = a[:n_samples]
+    a = a / np.iinfo(dtype).max
+    if fft:
+        if fft is True:
+            a = np.fft.rfft(a).real
+        else:
+            a = fft(a)
+    a = (a / n_samples).astype('float32')
+    return a
+
 _types = {
     'trace': {
         'regex': r'(?P<study>\d+\w+)_(?P<frame>\d+)\.(?:jpg|png)\.(?P<tracer>\w+)\.traced\.txt$',
