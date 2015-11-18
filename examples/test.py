@@ -23,7 +23,7 @@ def train_network(config):
         print(ds.sources.keys())
         print("Preparing autotracer...")
     # Create network
-    a = a3.Autotracer(config.training_db, None, roi=config.roi)
+    a = a3.Autotracer(config.training_db, None, roi=config.roi, config=config)
     a.train(config.epochs)
     a.save(config.output_network)
     # visualize output
@@ -38,7 +38,7 @@ def test_network(config):
         ds.read_sources(['trace','image','name'])
         print(ds.sources.keys())
         print("Preparing autotracer...")
-    a = a3.Autotracer(config.training_db, config.testing_db, roi=config.roi)
+    a = a3.Autotracer(config.training_db, config.testing_db, roi=config.roi, config=config)
     a.load(config.output_network)
     with h5py.File(config.testing_db,'r') as h:
         # trace all images used in training

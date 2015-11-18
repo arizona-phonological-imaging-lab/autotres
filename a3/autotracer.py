@@ -5,6 +5,7 @@ from __future__ import absolute_import, division
 from .roi import ROI
 from .errors import ShapeError
 from .constants import _version
+from lasagne.regularization import regularize_layer_params, regularize_layer_params_weighted, l2, l1
 from .struct import LossRecord
 from .utils import get_path
 import json
@@ -44,7 +45,8 @@ class Autotracer(object):
         layer_in (lasagne.layers.input.InputLayer): input layer
         layer_out (lasagne.layers.dense.DesnseLayer): output layer
     """
-    def __init__(self,train,test,roi):
+    # TODO: alternative constructor using data from Config instance
+    def __init__(self, train, test, roi, config=None):
         """
 
         Args:
@@ -54,6 +56,7 @@ class Autotracer(object):
                 this gets loaded as X_valid and y_valid
             roi (ROI): the location of the data within an image
         """
+        self.config = config
         # clean up paths
         train = get_path(train)
         test = get_path(test) if test else test
@@ -163,7 +166,13 @@ class Autotracer(object):
             [l_hidden3a,l_hidden3b],
             merge_function=theano.tensor.mul)
 
-    def __init_model(self,layer_size=2048):
+        # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
+        config = self.config
+        input_layer_weight = 0.1 if not config else config.l2_input_layer_weight
+        output_layer_weight = 0.5 if not config else config.l2_output_layer_weight
+        self.layer_weights = {self.layer_in: input_layer_weight, self.layer_out: output_layer_weight}
+
+    def __init_model(self, layer_size=2048):
         """Initializes the model
 
         For the most part, this consists of setting up some bookkeeping
@@ -190,12 +199,29 @@ class Autotracer(object):
         #stochastic_loss = lasagne.objectives.categorical_crossentropy(predictions, target_vector).mean()
         # the loss for validation
         #deterministic_loss = lasagne.objectives.categorical_crossentropy(test_predictions, target_vector).mean()
+        # calculate loss
+        loss = stochastic_loss
+        # should regularization be used?
+        config = self.config
+        if config:
+            if config.l1_regularization:
+                logging.info("Using L1 regularization")
+                l1_penalty = regularize_layer_params(self.layer_out, l1) * 1e-4
+                loss += l1_penalty
+            if config.l2_regularization:
+                logging.info("Using L2 regularization with weights")
+                logging.info("\tinput layer weight: {0}".format(self.layer_weights[self.layer_in]))
+                logging.info("\toutput layer weight: {0}".format(self.layer_weights[self.layer_out]))
+                l2_penalty = regularize_layer_params_weighted(self.layer_weights, l2)
+                loss += l2_penalty
+        else:
+            logging.info("No regularization")
         # the network parameters (i.e. weights)
         all_params = lasagne.layers.get_all_params(
             self.layer_out)
         # how to update the weights
         updates = lasagne.updates.nesterov_momentum(
-            loss_or_grads = stochastic_loss,
+            loss_or_grads = loss,
             params = all_params,
             learning_rate = 0.1,
             momentum = 0.9)

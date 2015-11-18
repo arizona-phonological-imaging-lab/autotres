@@ -23,6 +23,11 @@ out_points: 32
 figname: "~/repos/APIL/autotres/examples/training-loss-3000-epochs.png"
 # the db keys to use for training
 keys: ['study', 'frame']
+# regularization parameters
+l1_regularization: True
+l2_regularization: True
+l2_input_layer_weight: 0.1
+l2_output_layer_weight: 0.5
 # this entry describes the structure of the training directory
 training:
   trace:
