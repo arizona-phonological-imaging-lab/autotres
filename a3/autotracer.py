@@ -44,7 +44,7 @@ class Autotracer(object):
         layer_in (lasagne.layers.input.InputLayer): input layer
         layer_out (lasagne.layers.dense.DesnseLayer): output layer
     """
-    def __init__(self,train,test,roi):
+    def __init__(self,train,test,roi,predictors=None):
         """
 
         Args:
@@ -57,6 +57,7 @@ class Autotracer(object):
         # clean up paths
         train = get_path(train)
         test = get_path(test) if test else test
+        self.predictors = predictors if predictors else ['image']
         self.loadHDF5(train, test)
         self.roi = ROI(roi)
         self.__init_model()
@@ -79,13 +80,13 @@ class Autotracer(object):
         test = get_path(test) if test else test
         logging.debug('loadHDF5(%s,%s)' % (train,test))
         with h5py.File(train,'r') as h:
-            self.X_train = {k:np.array(h[k]) for k in ('image','audio')}
+            self.X_train = {k:np.array(h[k]) for k in h}
             self.y_train = np.array(h['trace'])
-            self.Xshape = {k:self.X_train[k].shape[1:] for k in self.X_train}
+            self.Xshape = {k:self.X_train[k].shape[1:] for k in h}
             self.yshape = self.y_train.shape[1:]
         if test:
             with h5py.File(test,'r') as h:
-                self.X_valid = {np.array(h[k]) for k in ('image','audio')}
+                self.X_valid = {np.array(h[k]) for k in self.predictors}
                 self.y_valid = np.array(h['trace'])
         else: 
             # split the training data into a training set and a validation set. 
@@ -129,23 +130,21 @@ class Autotracer(object):
                 logging.warning("Tried to compile Neural Net before"
                     "setting output dimensionality")
             raise ShapeError(self.Xshpae,self.yshape)
-        l_img_in = lasagne.layers.InputLayer(
-            shape = (None,) + self.Xshape['image'])
-        l_aud_in = lasagne.layers.InputLayer(
-            shape = (None,) + self.Xshape['audio'])
-        self.layer_in = [l_img_in,l_aud_in]
 
-        l_img_hidden1 = lasagne.layers.DenseLayer(
-            l_img_in,
-            num_units = layer_size,
-            nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
-        l_aud_hidden1 = lasagne.layers.DenseLayer(
-            l_aud_in,
-            num_units = layer_size,
-            nonlinearity =lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
-        l_hidden1 = lasagne.layers.ConcatLayer([l_img_hidden1,l_aud_hidden1])
+        l_in = {
+            k:lasagne.layers.InputLayer(shape=(None,)+self.Xshape[k])
+            for k in self.predictors}
+    
+        self.layer_in = [l_in[k] for k in self.predictors]
+
+        input_filters = [ 
+            lasagne.layers.DenseLayer(
+                    l_in[k],
+                    num_units = layer_size,
+                    nonlinearity =lasagne.nonlinearities.rectify,
+                    W = lasagne.init.GlorotUniform())
+            for k in self.predictors]
+        l_hidden1 = lasagne.layers.ConcatLayer(input_filters)
         l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5)
         
 
@@ -308,7 +307,7 @@ class Autotracer(object):
             for batch_num in range(num_batches_train):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num +1))
-                X_batch = [self.X_train[k][batch_slice] for k in ('image','audio')]
+                X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
                 y_batch = self.y_train[batch_slice,:,0,0]
                 loss, = self.train_batch(*(X_batch+[y_batch]))
                 train_losses.append(loss)
@@ -319,7 +318,7 @@ class Autotracer(object):
             for batch_num in range(num_batches_valid):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num + 1))
-                X_batch = [self.X_valid[k][batch_slice] for k in ('image','audio')]
+                X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
                 y_batch = self.y_valid[batch_slice,:,0,0]
                 loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
                 valid_losses.append(loss)
