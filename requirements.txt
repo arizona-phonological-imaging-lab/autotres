@@ -1,5 +1,6 @@
 cython
 pyyaml
+pyglet
 decorator==4.0.4
 h5py
 ipykernel==4.1.1

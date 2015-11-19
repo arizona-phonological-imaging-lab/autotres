@@ -45,6 +45,7 @@ class Autotracer(object):
         layer_in (lasagne.layers.input.InputLayer): input layer
         layer_out (lasagne.layers.dense.DesnseLayer): output layer
     """
+
     # TODO: alternative constructor using data from Config instance
     def __init__(self, train, test, roi, config=None):
         """
@@ -60,6 +61,7 @@ class Autotracer(object):
         # clean up paths
         train = get_path(train)
         test = get_path(test) if test else test
+        self.predictors = predictors if predictors else ['image']
         self.loadHDF5(train, test)
         self.roi = ROI(roi)
         self.__init_model()
@@ -82,23 +84,26 @@ class Autotracer(object):
         test = get_path(test) if test else test
         logging.debug('loadHDF5(%s,%s)' % (train,test))
         with h5py.File(train,'r') as h:
-            self.X_train = np.array(h['image'])
+            self.X_train = {k:np.array(h[k]) for k in h}
             self.y_train = np.array(h['trace'])
-            self.Xshape = self.X_train.shape[1:]
+            self.Xshape = {k:self.X_train[k].shape[1:] for k in h}
             self.yshape = self.y_train.shape[1:]
         if test:
             with h5py.File(test,'r') as h:
-                self.X_valid = np.array(h['image'])
+                self.X_valid = {np.array(h[k]) for k in self.predictors}
                 self.y_valid = np.array(h['trace'])
         else:
             # split the training data into a training set and a validation set.
-            i = np.floor(self.X_train.shape[0] * 0.75)
-            self.X_valid = self.X_train[i:]
+            i = {np.floor(self.X_train[k].shape[0] * 0.75) for k in self.X_train}
+            if len(i) is not 1:
+                raise Exception("Different N for diferent X")
+            i = i.pop()
+            self.X_valid = {k:self.X_train[k][i:] for k in self.X_train}
             self.y_valid = self.y_train[i:]
-            self.X_train = self.X_train[:i]
+            self.X_train = {k:self.X_train[k][:i] for k in self.X_train}
             self.y_train = self.y_train[:i]
         mismatch = False
-        if self.X_valid.shape[1:] != self.Xshape:
+        if any((self.X_valid[k].shape[1:] != self.Xshape[k] for k in self.X_valid)):
             logging.warn("Train and test set have different input shape")
             mismatch = True
         if self.y_valid.shape[1:] != self.yshape:
@@ -123,48 +128,43 @@ class Autotracer(object):
         """
         if self.Xshape == None or self.yshape == None:
             if self.Xshape == None:
-                logging.warning("Tried to compile Neural Net before" +
+                logging.warning("Tried to compile Neural Net before"
                     "setting input dimensionality")
             if self.yshape == None:
-                logging.warning("Tried to compile Neural Net before" +
+                logging.warning("Tried to compile Neural Net before"
                     "setting output dimensionality")
             raise ShapeError(self.Xshpae,self.yshape)
-        self.layer_in = lasagne.layers.InputLayer(
-            shape = (None,) + self.Xshape)
-        l_hidden1 = lasagne.layers.DenseLayer(
-            self.layer_in,
-            num_units = layer_size,
-            nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
+
+        l_in = {
+            k:lasagne.layers.InputLayer(shape=(None,)+self.Xshape[k])
+            for k in self.predictors}
+
+        self.layer_in = [l_in[k] for k in self.predictors]
+
+        input_filters = [
+            lasagne.layers.DenseLayer(
+                    l_in[k],
+                    num_units = layer_size,
+                    nonlinearity =lasagne.nonlinearities.rectify,
+                    W = lasagne.init.GlorotUniform())
+            for k in self.predictors]
+        l_hidden1 = lasagne.layers.ConcatLayer(input_filters)
         l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5)
 
-        l_hidden2a = lasagne.layers.DenseLayer(
+
+        l_hidden2 = lasagne.layers.DenseLayer(
             l_hidden1_d,
             num_units = layer_size,
             nonlinearity = lasagne.nonlinearities.rectify,
             W = lasagne.init.GlorotUniform())
-        l_hidden2a_d = lasagne.layers.DropoutLayer(l_hidden2a, p=.5)
-        l_hidden3a = lasagne.layers.DenseLayer(
-            l_hidden2a_d,
+        l_hidden2_d = lasagne.layers.DropoutLayer(l_hidden2, p=.5)
+        l_hidden3 = lasagne.layers.DenseLayer(
+            l_hidden2_d,
             num_units = self.yshape[0],
             nonlinearity = lasagne.nonlinearities.rectify,
             W = lasagne.init.GlorotUniform())
 
-        l_hidden2b = lasagne.layers.DenseLayer(
-            l_hidden1_d,
-            num_units = layer_size,
-            nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
-        l_hidden2b_d = lasagne.layers.DropoutLayer(l_hidden2b, p=.5)
-        l_hidden3b = lasagne.layers.DenseLayer(
-            l_hidden2b_d,
-            num_units = self.yshape[0],
-            nonlinearity = theano.tensor.nnet.hard_sigmoid,
-            W = lasagne.init.GlorotUniform())
-
-        self.layer_out = lasagne.layers.ElemwiseMergeLayer(
-            [l_hidden3a,l_hidden3b],
-            merge_function=theano.tensor.mul)
+        self.layer_out = l_hidden3
 
         # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
         config = self.config
@@ -230,19 +230,24 @@ class Autotracer(object):
         #   These get method-level wrappers below
         logging.info('compiling theano functions')
         self._train_fn = theano.function(
-            inputs  = [self.layer_in.input_var,target_vector],
+            on_unused_input='warn',
+            inputs  = [l.input_var for l in self.layer_in]+[target_vector],
             outputs = [stochastic_loss],
             updates = updates)
         self._valid_fn = theano.function(
-            inputs  = [self.layer_in.input_var, target_vector],
+            on_unused_input='warn',
+            inputs  = [l.input_var for l in self.layer_in]+[target_vector],
             outputs = [deterministic_loss,
                 lasagne.layers.get_output(self.layer_out)])
         self._trace_fn = theano.function(
-            inputs  = [self.layer_in.input_var],
+            on_unused_input='warn',
+            inputs  = [l.input_var for l in self.layer_in],
             outputs = [lasagne.layers.get_output(self.layer_out)
                 * self.roi.shape[0] + self.roi.offset[0]])
 
-    def train_batch(self, X, y):
+
+
+    def train_batch(self, *args):
         """Train on a minibatch
 
         Wrapper for _train_fn()
@@ -251,9 +256,9 @@ class Autotracer(object):
             X (tensor of float32): Minibatch from the training images
             y (tensor of float32): The corresponding traces
         """
-        return self._train_fn(X,y)
+        return self._train_fn(*args)
 
-    def valid_batch(self, X, y):
+    def valid_batch(self, *args):
         """Validates the network on a (mini)batch
 
         Wrapper for _valid_fn()
@@ -262,7 +267,7 @@ class Autotracer(object):
             X (tensor of float32): Minibatch from the validation images
             y (tensor of float32): The corresponding traces
         """
-        return self._valid_fn(X,y)
+        return self._valid_fn(*args)
 
     def trace(self, X, jfile=None, names=None, project_id=None, subject_id=None):
         """Trace a batch of images using the MLP
@@ -331,9 +336,9 @@ class Autotracer(object):
             for batch_num in range(num_batches_train):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num +1))
-                X_batch = self.X_train[batch_slice]
+                X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
                 y_batch = self.y_train[batch_slice,:,0,0]
-                loss, = self.train_batch(X_batch, y_batch)
+                loss, = self.train_batch(*(X_batch+[y_batch]))
                 train_losses.append(loss)
             train_loss = np.mean(train_losses)
             num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
@@ -342,9 +347,9 @@ class Autotracer(object):
             for batch_num in range(num_batches_valid):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num + 1))
-                X_batch = self.X_valid[batch_slice]
+                X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
                 y_batch = self.y_valid[batch_slice,:,0,0]
-                loss, traces_batch = self.valid_batch(X_batch, y_batch)
+                loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
                 valid_losses.append(loss)
                 list_of_traces_batch.append(traces_batch)
             valid_loss = np.mean(valid_losses)
