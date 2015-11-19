@@ -32,8 +32,8 @@ def get_path(p):
     """
     expand a user-specified path.  Supports "~" shortcut.
     """
-    return os.path.normpath(os.path.expanduser(p))
-    
+    return os.path.abspath(os.path.normpath(os.path.expanduser(p)))
+
 class Config(dict):
     """
     A storage class for the yaml-defined network configuration
