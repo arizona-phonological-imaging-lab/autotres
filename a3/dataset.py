@@ -88,7 +88,7 @@ class Dataset(object):
         except AttributeError:
             pass
 
-    def scan_directory(self,d,types,keys,sep=':',report_every=1000):
+    def scan_directory(self, d, types, keys, sep=':', report_every=1000):
         N_matches = 0
         d = get_path(d)
         for dirpath,__,filenames in os.walk(d):
