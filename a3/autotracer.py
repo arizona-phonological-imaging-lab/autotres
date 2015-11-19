@@ -264,7 +264,7 @@ class Autotracer(object):
         """
         return self._valid_fn(X,y)
 
-    def trace(self, X, jfile=None,names=None,project_id=None,subject_id=None):
+    def trace(self, X, jfile=None, names=None, project_id=None, subject_id=None):
         """Trace a batch of images using the MLP
 
         Can be used programmatically to get a numpy array of traces,
@@ -273,7 +273,7 @@ class Autotracer(object):
             X (tensor of float32): image to be traced
                 should be properly scaled to [0,1] and the roi.
             jfile (string, optional): location to save json traces
-                If falsey, then no json trace is created
+                If None, then no json trace is created
                 The rest of the args are required if jfile is truthy
             names (list of str, semi-optional): filenames for each trace
                 Used to associate traces in json with files
@@ -290,6 +290,8 @@ class Autotracer(object):
         """
         t, = self._trace_fn(X)
         if jfile:
+            # expand path
+            jfile = get_path(jfile)
             domain = self.roi.domain(t.shape[1])
             js = { 'roi'     : self.roi.json(),
                 'tracer-id'  : 'autotrace_%d.%d.%d'%_version,
