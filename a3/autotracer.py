@@ -324,6 +324,31 @@ class Autotracer(object):
         params = np.load(fname)
         lasagne.layers.set_all_param_values(self.layer_out,params)
 
+    def graph(self,path=None,format='svg'):
+        import pygraphviz
+        g = pygraphviz.AGraph(directed=True)
+        self.__graph_recursive(g,self.layer_out)
+        g.layout('dot')
+        r = g.draw(path=path,format=format)
+        return r
+
+    def __graph_recursive(self,graph,layer):
+        i = hex(id(layer)) 
+        if graph.has_node(i):
+            return i
+        else:
+            graph.add_node(i,label=layer.name)
+        if hasattr(layer,'input_layer'):
+            layers = [layer.input_layer]
+        elif hasattr(layer,'input_layers'):
+            layers = layer.input_layers
+        else:
+            layers = []
+        for l in layers:
+            j = self.__graph_recursive(graph,l)
+            graph.add_edge(j,i)
+        return i
+
     def train(self,num_epochs=2500,batch_size=512):
         """Train the MLP using minibatches
 
