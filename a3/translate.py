@@ -68,17 +68,16 @@ class TraceFactory(object):
             Closure for writing json file
             """
             with open(get_path(outfile), 'w') as out:
-                out.write(json.dumps(json_data))
+                json.dump(json_data, out)
 
         roi = roi if roi else TraceFactory.default_roi
         tracer_id = traces[0].tracer
         subject_id = subject_id
         project_id = project_id
         trace_data = dict([t.to_json() for t in traces])
-        json = dict([("roi", roi), ("tracer-id", tracer_id),("subject-id", subject_id), ("project-id", project_id), ('trace-data', trace_data)])
-        write_json()
+        json_d = dict([("roi", roi), ("tracer-id", tracer_id),("subject-id", subject_id), ("project-id", project_id), ('trace-data', trace_data)])
         # write the json to a file
-        write_json(outfile, json)
+        write_json(outfile, json_d)
 
     @classmethod
     def JSON_file_to_traces(cls, json_file):
@@ -128,7 +127,7 @@ class Trace(object):
 
     def coords_to_json(self):
         json_list = []
-        for pair in self.coordinates:
+        for pair in self.nonempty:
             x, y = pair[0], pair[-1]
             if x != -1 and y != -1:
                 json_list.append({"x":x, "y":y})
