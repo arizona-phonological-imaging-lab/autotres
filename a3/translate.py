@@ -122,7 +122,7 @@ class Trace(object):
         self.image = image
         self.tracer = tracer
         self.metadata = metadata
-        self.coordinates = sorted(self.filter_points(coordinates), key=lambda x: x[0])
+        self.coordinates = self.filter_points(coordinates)
         self.nonempty = [(x,y) for (x,y) in self.coordinates if x != -1 and y != -1 and x != 0 and y != 0]
 
     def __repr__(self):
