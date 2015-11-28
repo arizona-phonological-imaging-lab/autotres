@@ -1,10 +1,28 @@
+from PIL import Image
+from glob import glob
+from .utils import get_path, image_pattern
 import seaborn as sns
 import matplotlib.image as mpimg
 import numpy as np
+import itertools
 import os
-from .utils import get_path
 
 class Visualizer(object):
+
+    @classmethod
+    def show_average_image(cls, d):
+        d = get_path(d)
+        images = list(itertools.chain(*[glob(os.path.join(d, p)) for p in image_pattern]))
+        shape = np.asarray(Image.open(images[0])).shape
+        ave = np.zeros(shape)
+        N = len(images)
+        for image in images:
+            im = Image.open(image)#.convert('LA')
+            np.array(im, dtype=np.float)
+            ave += np.asarray(im)
+        # return averaged Image
+        return Image.fromarray(np.uint8(ave/N))
+
 
     @classmethod
     def visualize_training(cls, tr, savefig=None, show=False):
