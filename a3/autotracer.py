@@ -149,7 +149,7 @@ class Autotracer(object):
                     num_units = layer_size,
                     nonlinearity =lasagne.nonlinearities.rectify,
                     W = lasagne.init.GlorotUniform(),
-                    name="Filter %s"%(k,))
+                    name="Hidden")
             for k in self.predictors]
         l_hidden1 = lasagne.layers.ConcatLayer(input_filters,name="Concat")
         l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5, name="Dropout")
@@ -324,9 +324,9 @@ class Autotracer(object):
         params = np.load(fname)
         lasagne.layers.set_all_param_values(self.layer_out,params)
 
-    def graph(self,path=None,format='svg'):
+    def graph(self,path=None,format='svg',rankdir='TB'):
         import pygraphviz
-        g = pygraphviz.AGraph(directed=True)
+        g = pygraphviz.AGraph(directed=True,rankdir=rankdir)
         self.__graph_recursive(g,self.layer_out)
         g.layout('dot')
         r = g.draw(path=path,format=format)
@@ -336,14 +336,30 @@ class Autotracer(object):
         i = hex(id(layer)) 
         if graph.has_node(i):
             return i
-        else:
-            graph.add_node(i,label=layer.name)
-        if hasattr(layer,'input_layer'):
+        if type(layer) == lasagne.layers.DenseLayer:
+            shape = '*'.join([str(dim) for dim in layer.output_shape if dim and dim > 1])
+            attrs = {
+                'shape':'rectangle',
+                'label':'%s:\n%s'%(layer.name,shape)}
             layers = [layer.input_layer]
-        elif hasattr(layer,'input_layers'):
+        elif type(layer) == lasagne.layers.noise.DropoutLayer:
+            attrs = {
+                'label':'%s:\np=%g'%(layer.name,layer.p)}
+            layers = [layer.input_layer]
+        elif type(layer) == lasagne.layers.merge.ConcatLayer:
             layers = layer.input_layers
-        else:
+            attrs = {
+                'shape':'house',
+                'label':'%s:\n%s-way'%(layer.name,len(layers))}
+            if len(layers) == 1:
+                return self.__graph_recursive(graph,layers[0])
+        elif type(layer) == lasagne.layers.input.InputLayer:
+            shape = '*'.join([str(dim) for dim in layer.output_shape if dim and dim > 1])
+            attrs = {
+                'shape':'trapezium',
+                'label':'%s:\n%s'%(layer.name,shape),}
             layers = []
+        graph.add_node(i,**attrs)
         for l in layers:
             j = self.__graph_recursive(graph,l)
             graph.add_edge(j,i)
