@@ -36,6 +36,7 @@ class TraceFactory(object):
                     i, x, y = tuple(line.split())
                     coords.append((float(x), float(y)))
             return coords
+
         # necessary components of a Trace
         image = get_image_name(f)
         tracer = get_tracer(f)
@@ -59,7 +60,7 @@ class TraceFactory(object):
         return [cls.read_old_trace_file(t) for t in old_traces]
 
     @classmethod
-    def traces_to_json(cls, traces, outfile, subject_id, project_id, roi=None):
+    def traces_to_json(cls, traces, outfile, subject_id, project_id, roi=None, include_empty=True):
         """
         Takes a list of Trace instances and returns a json container
         """
@@ -68,17 +69,16 @@ class TraceFactory(object):
             Closure for writing json file
             """
             with open(get_path(outfile), 'w') as out:
-                out.write(json.dumps(json_data))
+                json.dump(json_data, out)
 
         roi = roi if roi else TraceFactory.default_roi
         tracer_id = traces[0].tracer
         subject_id = subject_id
         project_id = project_id
-        trace_data = dict([t.to_json() for t in traces])
-        json = dict([("roi", roi), ("tracer-id", tracer_id),("subject-id", subject_id), ("project-id", project_id), ('trace-data', trace_data)])
-        write_json()
+        trace_data = dict([t.to_json(include_empty) for t in traces])
+        json_d = dict([("roi", roi), ("tracer-id", tracer_id),("subject-id", subject_id), ("project-id", project_id), ('trace-data', trace_data)])
         # write the json to a file
-        write_json(outfile, json)
+        write_json(outfile, json_d)
 
     @classmethod
     def JSON_file_to_traces(cls, json_file):
@@ -117,25 +117,32 @@ class Trace(object):
     A representation of a tongue trace
     """
     def __init__(self, image, tracer, coordinates, metadata=None):
+        # what to use for empty points
+        self._empty_val = 0
         self.image = image
         self.tracer = tracer
         self.metadata = metadata
-        self.coordinates = coordinates
+        self.coordinates = self.filter_points(coordinates)
         self.nonempty = [(x,y) for (x,y) in self.coordinates if x != -1 and y != -1 and x != 0 and y != 0]
 
     def __repr__(self):
         return "Trace of {0} by {1} with {2} coordinates ({3} non-empty)".format(self.image, self.tracer, len(self.coordinates), len(self.nonempty))
 
-    def coords_to_json(self):
+    def filter_points(self, points):
+        # replace (-1, -1) with (0, 0)
+        return [(x,y) if (x != -1) else (self._empty_val, self._empty_val) for (x,y) in points]
+
+    def coords_to_json(self, include_empty):
         json_list = []
-        for pair in self.coordinates:
+        pairs = self.coordinates if include_empty else self.nonempty
+        for pair in pairs:
             x, y = pair[0], pair[-1]
             if x != -1 and y != -1:
                 json_list.append({"x":x, "y":y})
         return json_list
 
-    def to_json(self):
-        return (self.image, self.coords_to_json())
+    def to_json(self, use_nonempty):
+        return (self.image, self.coords_to_json(use_nonempty))
 
 
 

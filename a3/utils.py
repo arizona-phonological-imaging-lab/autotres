@@ -2,6 +2,9 @@ import os
 import re
 import yaml
 
+# the image extensions currently handled
+image_pattern = ["*.jpg", ".*png"]
+
 # The standard directory structure of older APIL projects
 apil_old = {
     'trace': {
