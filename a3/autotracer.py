@@ -136,7 +136,9 @@ class Autotracer(object):
             raise ShapeError(self.Xshpae,self.yshape)
 
         l_in = {
-            k:lasagne.layers.InputLayer(shape=(None,)+self.Xshape[k])
+            k:lasagne.layers.InputLayer(
+                shape=(None,)+self.Xshape[k],
+                name="Input %s"%(k,))
             for k in self.predictors}
 
         self.layer_in = [l_in[k] for k in self.predictors]
@@ -146,23 +148,26 @@ class Autotracer(object):
                     l_in[k],
                     num_units = layer_size,
                     nonlinearity =lasagne.nonlinearities.rectify,
-                    W = lasagne.init.GlorotUniform())
+                    W = lasagne.init.GlorotUniform(),
+                    name="Hidden")
             for k in self.predictors]
-        l_hidden1 = lasagne.layers.ConcatLayer(input_filters)
-        l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5)
-
+        l_hidden1 = lasagne.layers.ConcatLayer(input_filters,name="Concat")
+        l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5, name="Dropout")
+        
 
         l_hidden2 = lasagne.layers.DenseLayer(
             l_hidden1_d,
             num_units = layer_size,
             nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
-        l_hidden2_d = lasagne.layers.DropoutLayer(l_hidden2, p=.5)
+            W = lasagne.init.GlorotUniform(),
+            name="Hidden")
+        l_hidden2_d = lasagne.layers.DropoutLayer(l_hidden2, p=.5,name="Dropout")
         l_hidden3 = lasagne.layers.DenseLayer(
             l_hidden2_d,
             num_units = self.yshape[0],
             nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform())
+            W = lasagne.init.GlorotUniform(),
+            name="Output")
 
         self.layer_out = l_hidden3
 
@@ -318,6 +323,47 @@ class Autotracer(object):
         fname = get_path(fname)
         params = np.load(fname)
         lasagne.layers.set_all_param_values(self.layer_out,params)
+
+    def graph(self,path=None,format='svg',rankdir='TB'):
+        import pygraphviz
+        g = pygraphviz.AGraph(directed=True,rankdir=rankdir)
+        self.__graph_recursive(g,self.layer_out)
+        g.layout('dot')
+        r = g.draw(path=path,format=format)
+        return r
+
+    def __graph_recursive(self,graph,layer):
+        i = hex(id(layer)) 
+        if graph.has_node(i):
+            return i
+        if type(layer) == lasagne.layers.DenseLayer:
+            shape = '*'.join([str(dim) for dim in layer.output_shape if dim and dim > 1])
+            attrs = {
+                'shape':'rectangle',
+                'label':'%s:\n%s'%(layer.name,shape)}
+            layers = [layer.input_layer]
+        elif type(layer) == lasagne.layers.noise.DropoutLayer:
+            attrs = {
+                'label':'%s:\np=%g'%(layer.name,layer.p)}
+            layers = [layer.input_layer]
+        elif type(layer) == lasagne.layers.merge.ConcatLayer:
+            layers = layer.input_layers
+            attrs = {
+                'shape':'house',
+                'label':'%s:\n%s-way'%(layer.name,len(layers))}
+            if len(layers) == 1:
+                return self.__graph_recursive(graph,layers[0])
+        elif type(layer) == lasagne.layers.input.InputLayer:
+            shape = '*'.join([str(dim) for dim in layer.output_shape if dim and dim > 1])
+            attrs = {
+                'shape':'trapezium',
+                'label':'%s:\n%s'%(layer.name,shape),}
+            layers = []
+        graph.add_node(i,**attrs)
+        for l in layers:
+            j = self.__graph_recursive(graph,l)
+            graph.add_edge(j,i)
+        return i
 
     def train(self,num_epochs=2500,batch_size=512):
         """Train the MLP using minibatches
