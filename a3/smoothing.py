@@ -13,6 +13,7 @@ class TraceCorrection(object):
         returns a new Trace with values preceding either min set to zero
         """
         early_min, late_min = cls.get_minima(trace.coordinates)
+        late_min += 1
         nc = trace.coordinates[:]
         empty_point = (0,0)
         nc[:early_min] = early_min * [empty_point]
