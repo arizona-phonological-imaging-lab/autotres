@@ -11,10 +11,6 @@ from .utils import get_path
 import json
 import logging
 
-# These evironment flags set up GPU training
-import os
-os.environ['THEANO_FLAGS'] = 'floatX=float32,device=gpu'
-
 import numpy as np
 import h5py
 import theano
