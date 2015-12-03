@@ -297,7 +297,7 @@ class Autotracer(object):
                 The traces will be scaled up to the scale of the image,
                 rather than on the scale required for input.
         """
-        t, = self._trace_fn(X)
+        t, = self._trace_fn(*[X[k] for k in self.predictors])
         if jfile:
             # expand path
             jfile = get_path(jfile)
