@@ -47,7 +47,7 @@ class Autotracer(object):
     """
 
     # TODO: alternative constructor using data from Config instance
-    def __init__(self, train, test, roi, config=None):
+    def __init__(self, train, test, roi, config=None, predictors=None):
         """
 
         Args:
