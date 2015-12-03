@@ -175,7 +175,9 @@ class Autotracer(object):
         config = self.config
         input_layer_weight = 0.1 if not config else config.l2_input_layer_weight
         output_layer_weight = 0.5 if not config else config.l2_output_layer_weight
-        self.layer_weights = {self.layer_in: input_layer_weight, self.layer_out: output_layer_weight}
+        self.layer_weights = {self.layer_out: output_layer_weight}
+        for layer in self.layer_in:
+            self.layer_weights[layer] = input_layer_weight
 
     def __init_model(self, layer_size=2048):
         """Initializes the model
@@ -215,7 +217,8 @@ class Autotracer(object):
                 loss += l1_penalty
             if config.l2_regularization:
                 logging.info("Using L2 regularization with weights")
-                logging.info("\tinput layer weight: {0}".format(self.layer_weights[self.layer_in]))
+                for sublayer in self.layer_in:
+                    logging.info("\tinput layer ({1}) weight: {0}".format(self.layer_weights[sublayer],sublayer.name))
                 logging.info("\toutput layer weight: {0}".format(self.layer_weights[self.layer_out]))
                 l2_penalty = regularize_layer_params_weighted(self.layer_weights, l2)
                 loss += l2_penalty
