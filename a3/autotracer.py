@@ -407,8 +407,8 @@ class Autotracer(object):
                 best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
                 best_loss = valid_loss
             self.loss_record += [epoch_num+1, train_loss, valid_loss]
-            logging.info('Epoch: %d, train_loss=%f, valid_loss=%f'
-                    % (epoch_num+1, train_loss, valid_loss))
+            logging.info('Epoch: %d, train_loss=%f, valid_loss=%f',
+                    epoch_num+1, train_loss, valid_loss)
         if best:
             logging.info('Reverting to best validation loss: %f', best_loss)
             lasagne.layers.set_all_param_values(self.layer_out,best_params)
