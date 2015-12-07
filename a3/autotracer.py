@@ -10,6 +10,7 @@ from .struct import LossRecord
 from .utils import get_path
 import json
 import logging
+import sys
 
 import numpy as np
 import h5py
@@ -364,7 +365,7 @@ class Autotracer(object):
             graph.add_edge(j,i)
         return i
 
-    def train(self,num_epochs=2500,batch_size=512):
+    def train(self,num_epochs=2500,batch_size=512,best=False):
         """Train the MLP using minibatches
 
         Args:
@@ -375,6 +376,9 @@ class Autotracer(object):
         logging.info('Training')
         # keep track of (epoch + 1, train_loss, valid_loss)
         self.loss_record = LossRecord()
+        if best:
+            best_loss = sys.float_info.max
+            best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
         for epoch_num in range(num_epochs):
             num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
             train_losses = []
@@ -399,6 +403,12 @@ class Autotracer(object):
                 list_of_traces_batch.append(traces_batch)
             valid_loss = np.mean(valid_losses)
             # store loss
+            if best and valid_loss < best_loss:
+                best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+                best_loss = valid_loss
             self.loss_record += [epoch_num+1, train_loss, valid_loss]
             logging.info('Epoch: %d, train_loss=%f, valid_loss=%f'
                     % (epoch_num+1, train_loss, valid_loss))
+        if best:
+            logging.info('Reverting to best validation loss: %f', best_loss)
+            lasagne.layers.set_all_param_values(self.layer_out,best_params)
