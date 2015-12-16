@@ -53,6 +53,9 @@ class Autotracer(object):
                 this gets loaded as X_valid and y_valid
             roi (ROI): the location of the data within an image
         """
+        self.__nonlinearities = {
+            'relu' : lasagne.nonlinearities.rectify}
+
         self.config = config
         # clean up paths
         train = get_path(train)
@@ -174,6 +177,39 @@ class Autotracer(object):
         self.layer_weights = {self.layer_out: output_layer_weight}
         for layer in self.layer_in:
             self.layer_weights[layer] = input_layer_weight
+
+    def _init_layers_file(self,jfile):
+        with open(jfile) as f:
+            d = json.load(f)
+        self.layer_out = self.__init_layers_file_recursive(d)
+
+    def __init_layers_file_recursive(self,d,cur='trace'):
+        l_type = d[cur]['type']
+        if l_type == 'dense':
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_nl = (self.__nonlinearities[d[cur]['nonlinearity']] 
+                if 'nonlinearity' in d[cur] 
+                else lasagne.nonlinearities.rectify)
+            l_W = (np.array(d[cur]['W']) if 'W' in d[cur] 
+                else lasagne.init.GlorotUniform())
+            l_b = (np.array(d[cur]['b']) if 'b' in d[cur]
+                else lasagne.init.Constant(0.))
+            l_num_units = int(d[cur]['num_units'])
+            l = lasagne.layers.DenseLayer(
+                l_input,
+                nonlinearity = l_nl,
+                num_units = l_num_units,
+                W = l_W,
+                b = l_b,
+                name = cur)
+        elif l_type == 'input':
+            l_shape = (None,) + tuple(d[cur]['shape'])
+            l = lasagne.layers.InputLayer(
+                shape = l_shape,
+                name = cur)
+        else:
+            raise NotImplementedError("Cannot (yet) load %s layers.")
+        return l
 
     def __init_model(self, layer_size=2048):
         """Initializes the model
