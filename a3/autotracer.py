@@ -55,6 +55,7 @@ class Autotracer(object):
         """
         self.__nonlinearities = {
             'relu' : lasagne.nonlinearities.rectify}
+        self._layers = {}
 
         self.config = config
         # clean up paths
@@ -181,9 +182,13 @@ class Autotracer(object):
     def _init_layers_file(self,jfile):
         with open(jfile) as f:
             d = json.load(f)
-        self.layer_out = self.__init_layers_file_recursive(d)
+        self.__init_layers_file_recursive(d)
+        self.layer_out = self._layers['trace']
+        self.layer_in  = [self._layers[k] for k in self.predictors]
 
     def __init_layers_file_recursive(self,d,cur='trace'):
+        if cur in self._layers:
+            return self._layers[cur]
         l_type = d[cur]['type']
         if l_type == 'dense':
             l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
@@ -209,6 +214,7 @@ class Autotracer(object):
                 name = cur)
         else:
             raise NotImplementedError("Cannot (yet) load %s layers.")
+        self._layers[cur] = l
         return l
 
     def __init_model(self, layer_size=2048):
