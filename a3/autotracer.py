@@ -43,7 +43,8 @@ class Autotracer(object):
     """
 
     # TODO: alternative constructor using data from Config instance
-    def __init__(self, train, test, roi, config=None, predictors=None):
+    # TODO: incorporate network json into config
+    def __init__(self, train, test, roi, net_json, config=None, predictors=None):
         """
 
         Args:
@@ -64,7 +65,7 @@ class Autotracer(object):
         self.predictors = predictors if predictors else ['image']
         self.loadHDF5(train, test)
         self.roi = ROI(roi)
-        self.__init_model()
+        self.__init_model(net_json)
 
     def loadHDF5(self,train,test=None):
         """Load a test and training dataset from hdf5 databases
@@ -112,7 +113,7 @@ class Autotracer(object):
         if mismatch:
             raise ShapeError(self.X_valid.shape[1:],self.y_valid.shape[1:])
 
-    def __init_layers(self,layer_size):
+    def __init_layers(self,jfile):
         """Create the architecture of the MLP
 
         The achitecture is currently hard-coded.
@@ -135,41 +136,12 @@ class Autotracer(object):
                     "setting output dimensionality")
             raise ShapeError(self.Xshpae,self.yshape)
 
-        l_in = {
-            k:lasagne.layers.InputLayer(
-                shape=(None,)+self.Xshape[k],
-                name="Input %s"%(k,))
-            for k in self.predictors}
-
-        self.layer_in = [l_in[k] for k in self.predictors]
-
-        input_filters = [
-            lasagne.layers.DenseLayer(
-                    l_in[k],
-                    num_units = layer_size,
-                    nonlinearity =lasagne.nonlinearities.rectify,
-                    W = lasagne.init.GlorotUniform(),
-                    name="Hidden")
-            for k in self.predictors]
-        l_hidden1 = lasagne.layers.ConcatLayer(input_filters,name="Concat")
-        l_hidden1_d = lasagne.layers.DropoutLayer(l_hidden1, p=.5, name="Dropout")
         
-
-        l_hidden2 = lasagne.layers.DenseLayer(
-            l_hidden1_d,
-            num_units = layer_size,
-            nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform(),
-            name="Hidden")
-        l_hidden2_d = lasagne.layers.DropoutLayer(l_hidden2, p=.5,name="Dropout")
-        l_hidden3 = lasagne.layers.DenseLayer(
-            l_hidden2_d,
-            num_units = self.yshape[0],
-            nonlinearity = lasagne.nonlinearities.rectify,
-            W = lasagne.init.GlorotUniform(),
-            name="Output")
-
-        self.layer_out = l_hidden3
+        with open(jfile) as f:
+            d = json.load(f)
+        self.__init_layers_file_recursive(d)
+        self.layer_out = self._layers['trace']
+        self.layer_in  = [self._layers[k] for k in self.predictors]
 
         # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
         config = self.config
@@ -178,13 +150,6 @@ class Autotracer(object):
         self.layer_weights = {self.layer_out: output_layer_weight}
         for layer in self.layer_in:
             self.layer_weights[layer] = input_layer_weight
-
-    def _init_layers_file(self,jfile):
-        with open(jfile) as f:
-            d = json.load(f)
-        self.__init_layers_file_recursive(d)
-        self.layer_out = self._layers['trace']
-        self.layer_in  = [self._layers[k] for k in self.predictors]
 
     def __init_layers_file_recursive(self,d,cur='trace'):
         if cur in self._layers:
@@ -217,7 +182,7 @@ class Autotracer(object):
         self._layers[cur] = l
         return l
 
-    def __init_model(self, layer_size=2048):
+    def __init_model(self, jfile):
         """Initializes the model
 
         For the most part, this consists of setting up some bookkeeping
@@ -227,7 +192,7 @@ class Autotracer(object):
             gets passed directly to self.__init_layers
         """
         logging.info('initializing model')
-        self.__init_layers(layer_size)
+        self.__init_layers(jfile)
 
         # These are theano/lasagne symbolic variable declarationss,
         # representing... the target vector(traces)
