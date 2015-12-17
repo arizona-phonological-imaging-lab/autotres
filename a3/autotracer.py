@@ -178,7 +178,7 @@ class Autotracer(object):
                 shape = l_shape,
                 name = cur)
         else:
-            raise NotImplementedError("Cannot (yet) load %s layers.")
+            raise NotImplementedError("Cannot (yet) load %s layers."%(l_type))
         self._layers[cur] = l
         return l
 
