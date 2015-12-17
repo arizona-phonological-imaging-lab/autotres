@@ -173,7 +173,9 @@ class Autotracer(object):
                 b = l_b,
                 name = cur)
         elif l_type == 'input':
-            l_shape = (None,) + tuple(d[cur]['shape'])
+            l_shape = (tuple(d[cur]['shape']) if 'shape' in d[cur] 
+                else self.Xshape[cur])
+            l_shape = (None,) + l_shape
             l = lasagne.layers.InputLayer(
                 shape = l_shape,
                 name = cur)
