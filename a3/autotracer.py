@@ -177,6 +177,21 @@ class Autotracer(object):
             l = lasagne.layers.InputLayer(
                 shape = l_shape,
                 name = cur)
+        elif l_type == 'dropout':
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_p = float(d[cur]['p']) if 'p' in d[cur] else 0.5
+            l = lasagne.layers.DropoutLayer(
+                l_input,
+                p = l_p,
+                name = cur)
+        elif l_type == 'concat':
+            l_inputs = [self.__init_layers_file_recursive(d,k)
+                for k in d[cur]['inputs']]
+            l_axis = d[cur]['axis'] if 'axis' in d[cur] else 1
+            l = lasagne.layers.ConcatLayer(
+                l_inputs,
+                axis = l_axis,
+                name = cur)
         else:
             raise NotImplementedError("Cannot (yet) load %s layers."%(l_type))
         self._layers[cur] = l
