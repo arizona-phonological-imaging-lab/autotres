@@ -69,7 +69,7 @@ if not os.path.isfile('SG.hdf5'):
     ds.read_sources({'trace','image','name'})
 
 # The rest is easy. Construct an autotracer from your new dataset. Specifying None for the validation set sets aside part of your training data as validation data (no guarantees about randomness). Make sure you use the same ROI as above, or at least the same size.
-a = a3.Autotracer('SG.hdf5',None,roi=(140.,320.,250.,580.))
+a = a3.Autotracer('SG.hdf5',None,(140.,320.,250.,580.),'example.a3.json')
 # Train on the dataset 10 times. In reality, training will require thousands of runs through the dataset. Mnibatch size can be controlled with the 'minibatch' kwarg, which defaults to 512.
 a.train(10)
 # Save your weights! Note that this doesn't contain any information about the layout of the NNet -- that's still in the works. To change layouts, change the code in a3.Autotrace.__init_layers()
