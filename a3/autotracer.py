@@ -44,7 +44,7 @@ class Autotracer(object):
 
     # TODO: alternative constructor using data from Config instance
     # TODO: incorporate network json into config
-    def __init__(self, train, test, roi, net_json, config=None, predictors=None):
+    def __init__(self, train, test, roi, net_json, config=None):
         """
 
         Args:
@@ -62,7 +62,6 @@ class Autotracer(object):
         # clean up paths
         train = get_path(train)
         test = get_path(test) if test else test
-        self.predictors = predictors if predictors else ['image']
         self.loadHDF5(train, test)
         self.roi = ROI(roi)
         self.__init_model(net_json)
@@ -91,7 +90,7 @@ class Autotracer(object):
             self.yshape = self.y_train.shape[1:]
         if test:
             with h5py.File(test,'r') as h:
-                self.X_valid = {np.array(h[k]) for k in self.predictors}
+                self.X_valid = {np.array(h[k]) for k in h}
                 self.y_valid = np.array(h['trace'])
         else:
             # split the training data into a training set and a validation set.
@@ -139,9 +138,9 @@ class Autotracer(object):
         
         with open(jfile) as f:
             d = json.load(f)
+        self.layer_in = [] # will be filled by __init_layers_file_recursive
         self.__init_layers_file_recursive(d)
         self.layer_out = self._layers['trace']
-        self.layer_in  = [self._layers[k] for k in self.predictors]
 
         # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
         config = self.config
@@ -179,6 +178,8 @@ class Autotracer(object):
             l = lasagne.layers.InputLayer(
                 shape = l_shape,
                 name = cur)
+            if cur not in {l.name for l in self.layer_in}:
+                self.layer_in.append(l)
         elif l_type == 'dropout':
             l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
             l_p = float(d[cur]['p']) if 'p' in d[cur] else 0.5
@@ -321,7 +322,7 @@ class Autotracer(object):
                 The traces will be scaled up to the scale of the image,
                 rather than on the scale required for input.
         """
-        t, = self._trace_fn(*[X[k] for k in self.predictors])
+        t, = self._trace_fn(*[X[l.name] for l in self.layer_in])
         if jfile:
             # expand path
             jfile = get_path(jfile)
@@ -405,7 +406,7 @@ class Autotracer(object):
             for batch_num in range(num_batches_train):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num +1))
-                X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
+                X_batch = [self.X_train[l.name][batch_slice] for l in self.layer_in]
                 y_batch = self.y_train[batch_slice,:,0,0]
                 loss, = self.train_batch(*(X_batch+[y_batch]))
                 train_losses.append(loss)
@@ -416,7 +417,7 @@ class Autotracer(object):
             for batch_num in range(num_batches_valid):
                 batch_slice = slice(batch_size * batch_num,
                                     batch_size * (batch_num + 1))
-                X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
+                X_batch = [self.X_valid[l.name][batch_slice] for l in self.layer_in]
                 y_batch = self.y_valid[batch_slice,:,0,0]
                 loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
                 valid_losses.append(loss)
