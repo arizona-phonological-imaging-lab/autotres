@@ -200,6 +200,41 @@ class Autotracer(object):
         self._layers[cur] = l
         return l
 
+    def save(self,fname):
+        d = {}
+        self.__save_recursive(d,self.layer_out)
+        with open(fname,'w') as f:
+            json.dump(d,f)
+
+    def __save_recursive(self,d,layer,save_params=False):
+        i = layer.name
+        if i in d:
+            return
+        t = {}
+        if type(layer) == lasagne.layers.DenseLayer:
+            t['type'] = 'dense'
+            t['input'] = self.__save_recursive(d,layer.input_layer)
+            t['nonlinearity'], = [nl for nl in self.__nonlinearities 
+                   if self.__nonlinearities[nl] == layer.nonlinearity]
+            if save_params == str:
+                t['W'] = layer.W.get_value().tolist()
+                t['b'] = layer.b.get_value().tolist()
+            t['num_units'] = layer.num_units
+        elif type(layer) == lasagne.layers.noise.DropoutLayer:
+            t['type'] = 'dropout'
+            t['input'] = self.__save_recursive(d,layer.input_layer)
+            t['p'] = layer.p
+        elif type(layer) == lasagne.layers.merge.ConcatLayer:
+            t['type'] = 'concat'
+            t['inputs'] = [self.__save_recursive(d,l) 
+                           for l in layer.input_layers]
+            t['axis'] = layer.axis
+        elif type(layer) == lasagne.layers.input.InputLayer:
+            t['type'] = 'input'
+            t['shape'] = list(layer.shape[1:])
+        d[i] = t
+        return i
+
     def __init_model(self, jfile):
         """Initializes the model
 
@@ -337,16 +372,6 @@ class Autotracer(object):
             with open(jfile,'w') as f:
                 json.dump(js,f)
         return t
-
-    def save(self,fname):
-        fname = get_path(fname)
-        params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
-        np.save(fname,params)
-
-    def load(self,fname):
-        fname = get_path(fname)
-        params = np.load(fname)
-        lasagne.layers.set_all_param_values(self.layer_out,params)
 
     def graph(self,path=None,format='svg',rankdir='TB'):
         import pygraphviz
