@@ -2,37 +2,27 @@
     "image" : {
         "type" : "input",
         "shape" : [1, 18, 33]},
-    "hidden_image" : {
+    "hidden a" : {
         "type" : "dense",
         "nonlinearity" : "relu",
         "num_units" : 2048,
         "input" : "image"},
-    "audio" : {
-        "type" : "input"},
-    "hidden_audio" : {
+    "dropout a" : {
+        "type" : "dropout",
+        "p" : 0.5,
+        "input" : "hidden a"},
+    "hidden b" : {
         "type" : "dense",
         "nonlinearity" : "relu",
         "num_units" : 2048,
-        "input" : "audio"},
-    "cat" : {
-        "type" : "concat",
-        "inputs" : ["hidden_image"]},
-    "cat_dropout" : {
+        "input" : "dropout a"},
+    "dropout b" : {
         "type" : "dropout",
         "p" : 0.5,
-        "input" : "cat"},
-    "hidden" : {
-        "type" : "dense",
-        "nonlinearity" : "relu",
-        "num_units" : 2048,
-        "input" : "cat_dropout"},
-    "hidden_dropout" : {
-        "type" : "dropout",
-        "p" : 0.5,
-        "input" : "hidden"},
+        "input" : "hidden b"},
     "trace" : {
         "type" : "dense",
         "nonlinearity" : "relu",
         "num_units" : 32,
-        "input" : "hidden_dropout"}
+        "input" : "dropout b"}
 }
