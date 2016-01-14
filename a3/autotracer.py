@@ -314,6 +314,36 @@ class Autotracer(object):
                 json.dump(js,f)
         return t
 
+    def test(self,test=None,other=None,inf=10000):
+        if not other:
+            other = _FakeAutotracer(self.y_train[...,0,0])
+        if test:
+            with h5py.File(test) as h:
+                gold = h['trace'][...,0,0]
+                thisdat = [np.array(h[k]) for k in  self.predictors]+[gold]
+                thatdat = [np.array(h[k]) for k in other.predictors]+[gold]
+        else:
+            gold = self.y_valid[...,0,0]
+            thisdat = [self.X_valid[k] for k in  self.predictors]+[gold]
+            thatdat = [self.X_valid[k] for k in other.predictors]+[gold]
+        _,this =  self._valid_fn(*thisdat)
+        _,that = other._valid_fn(*thatdat)
+        these_mse = lasagne.objectives.squared_error(this,gold).mean(axis=1)
+        those_mse = lasagne.objectives.squared_error(that,gold).mean(axis=1)
+        pooled_mse = np.append(these_mse,those_mse)
+        this_d = np.absolute(these_mse.mean() - those_mse.mean())
+        ds = []
+        N = len(these_mse)
+        logging.info('Testing')
+        for i in range(inf):
+            np.random.shuffle(pooled_mse)
+            new_these = pooled_mse[:N]
+            new_those = pooled_mse[N:]
+            ds.append(np.abs(new_these.mean() - new_those.mean()))
+        ds = np.array(ds)
+        p = np.count_nonzero(ds > this_d) / inf
+        return (these_mse.mean(), those_mse.mean(), p)
+
     def save(self,fname):
         fname = get_path(fname)
         params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
@@ -415,3 +445,17 @@ class Autotracer(object):
         if best:
             logging.info('Reverting to best validation loss: %f', best_loss)
             lasagne.layers.set_all_param_values(self.layer_out,best_params)
+
+class _FakeAutotracer(Autotracer):
+
+    def __init__(self,X_train):
+        self.guess = X_train.mean(axis=0)
+        self.predictors = []
+        self._valid_fn = self.__valid_fn()
+
+    def __valid_fn(self):
+        def _valid_fn(*args):
+            t = np.tile(self.guess,(args[-1].shape[0],)+(1,)*self.guess.ndim)
+            l = lasagne.objectives.squared_error(t, args[-1]).mean()
+            return l,t
+        return _valid_fn
