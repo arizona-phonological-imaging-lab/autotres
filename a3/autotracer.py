@@ -243,11 +243,11 @@ class Autotracer(object):
             on_unused_input='warn',
             inputs  = [l.input_var for l in self.layer_in]+[target_vector],
             outputs = [deterministic_loss,
-                lasagne.layers.get_output(self.layer_out)])
+                validation_predictions])
         self._trace_fn = theano.function(
             on_unused_input='warn',
             inputs  = [l.input_var for l in self.layer_in],
-            outputs = [lasagne.layers.get_output(self.layer_out)
+            outputs = [predictions
                 * self.roi.shape[0] + self.roi.offset[0]])
 
 
