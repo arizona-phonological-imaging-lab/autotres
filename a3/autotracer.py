@@ -150,7 +150,7 @@ class Autotracer(object):
         for layer in self.layer_in:
             self.layer_weights[layer] = input_layer_weight
 
-    def __init_layers_file_recursive(self,d,cur='trace'):
+    def __init_layers_file_recursive(self,d,cur='trace',encoding='IBM500'):
         if cur in self._layers:
             return self._layers[cur]
         l_type = d[cur]['type']
@@ -159,11 +159,13 @@ class Autotracer(object):
             l_nl = (self.__nonlinearities[d[cur]['nonlinearity']] 
                 if 'nonlinearity' in d[cur] 
                 else lasagne.nonlinearities.rectify)
-            l_W = (np.array(d[cur]['W']) if 'W' in d[cur] 
-                else lasagne.init.GlorotUniform())
-            l_b = (np.array(d[cur]['b']) if 'b' in d[cur]
-                else lasagne.init.Constant(0.))
+            dtype = (d[cur]['dtype'] if 'dtype' in d[cur] 
+                else theano.config.floatX)
             l_num_units = int(d[cur]['num_units'])
+            l_W = (np.fromstring(d[cur]['W'].encode(encoding),dtype).reshape((-1,l_num_units)) 
+                if 'W' in d[cur] else lasagne.init.GlorotUniform())
+            l_b = (np.fromstring(d[cur]['b'].encode(encoding),dtype) 
+                if 'b' in d[cur] else lasagne.init.Constant(0.))
             l = lasagne.layers.DenseLayer(
                 l_input,
                 nonlinearity = l_nl,
@@ -200,33 +202,34 @@ class Autotracer(object):
         self._layers[cur] = l
         return l
 
-    def save(self,fname):
+    def save(self,fname,save_params=False,encoding='IBM500'):
         d = {}
-        self.__save_recursive(d,self.layer_out)
+        self.__save_recursive(d,self.layer_out,save_params,encoding)
         with open(fname,'w') as f:
             json.dump(d,f)
 
-    def __save_recursive(self,d,layer,save_params=False):
+    def __save_recursive(self,d,layer,sp,enc):
         i = layer.name
         if i in d:
             return
         t = {}
         if type(layer) == lasagne.layers.DenseLayer:
             t['type'] = 'dense'
-            t['input'] = self.__save_recursive(d,layer.input_layer)
+            t['input'] = self.__save_recursive(d,layer.input_layer,sp,enc)
             t['nonlinearity'], = [nl for nl in self.__nonlinearities 
                    if self.__nonlinearities[nl] == layer.nonlinearity]
-            if save_params == str:
-                t['W'] = layer.W.get_value().tolist()
-                t['b'] = layer.b.get_value().tolist()
+            if sp:
+                t['dtype'] = layer.W.get_value().dtype.str
+                t['W'] = layer.W.get_value().tobytes().decode(enc)
+                t['b'] = layer.b.get_value().tobytes().decode(enc)
             t['num_units'] = layer.num_units
         elif type(layer) == lasagne.layers.noise.DropoutLayer:
             t['type'] = 'dropout'
-            t['input'] = self.__save_recursive(d,layer.input_layer)
+            t['input'] = self.__save_recursive(d,layer.input_layer,sp,enc)
             t['p'] = layer.p
         elif type(layer) == lasagne.layers.merge.ConcatLayer:
             t['type'] = 'concat'
-            t['inputs'] = [self.__save_recursive(d,l) 
+            t['inputs'] = [self.__save_recursive(d,l,sp,enc) 
                            for l in layer.input_layers]
             t['axis'] = layer.axis
         elif type(layer) == lasagne.layers.input.InputLayer:
