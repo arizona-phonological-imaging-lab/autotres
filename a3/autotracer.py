@@ -135,8 +135,8 @@ class Autotracer(object):
                     "setting output dimensionality")
             raise ShapeError(self.Xshpae,self.yshape)
 
-        
-        with open(jfile) as f:
+        from .utils import compressed_file
+        with compressed_file(jfile,'rt') as f:
             d = json.load(f)
         self.layer_in = [] # will be filled by __init_layers_file_recursive
         self.__init_layers_file_recursive(d)
@@ -202,10 +202,22 @@ class Autotracer(object):
         self._layers[cur] = l
         return l
 
-    def save(self,fname,save_params=False,encoding='IBM500'):
+    def save(self,fname,save_params=None,compress=None,encoding='IBM500'):
+        if compress == None:
+            from .utils import compressed_file
+            compress = compressed_file
+        elif compress == True:
+            import bz2
+            compress = bz2.open
+            fname += '.bz2'
+        elif not compress:
+            compress = open
         d = {}
         self.__save_recursive(d,self.layer_out,save_params,encoding)
-        with open(fname,'w') as f:
+        with compress(fname,'wt') as f:
+            if save_params == None: 
+                import io
+                save_params = (type(f) != io.TextIOWrapper)
             json.dump(d,f)
 
     def __save_recursive(self,d,layer,sp,enc):

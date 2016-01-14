@@ -37,6 +37,21 @@ def get_path(p):
     """
     return os.path.abspath(os.path.normpath(os.path.expanduser(p)))
 
+def compressed_file(fname,mode='rt',*args,**kwargs):
+    if fname.endswith('.gz'):
+        import gzip
+        compress = gzip.open
+    elif fname.endswith('.bz2'):
+        import bz2
+        compress = bz2.open
+    elif fname.endswith('.xz') or fname.endswith('.lzma'):
+        import lzma 
+        compress = lzma.open
+    else:
+        compress = open
+    return compress(fname,mode,*args,**kwargs)
+        
+
 class Config(dict):
     """
     A storage class for the yaml-defined network configuration
