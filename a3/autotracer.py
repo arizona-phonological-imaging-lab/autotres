@@ -20,7 +20,7 @@ import lasagne
 class Autotracer(object):
     """Automatically traces tongues in Ultrasound images.
 
-    Attributes (all read-only):
+    Attributes:
         roi (ROI): Where the ultrasound images the data represent.
         X_train (tensor of float32): the training dataset images.
             each element is 1 pixel, scaled from 0 (black) to 1 (white).
@@ -48,19 +48,21 @@ class Autotracer(object):
         """
 
         Args:
+            net_json (string): the location of a network definition file
+            roi (ROI): the location of the data within an image
             train (string): the location of a hdf5 dataset for training
                 this gets loaded as X_train and y_train
             valid (string): the location of a hdf5 dataset for validation
                 this gets loaded as X_valid and y_valid
-            roi (ROI): the location of the data within an image
+            config (string): the location of a network configuration file
         """
         self.__nonlinearities = {
             'relu' : lasagne.nonlinearities.rectify}
         self._layers = {}
 
         self.config = config
-        # clean up paths
         if train:
+            # clean up paths
             train = get_path(train)
             valid = get_path(valid) if valid else valid
             self.loadHDF5(train, valid)
@@ -70,14 +72,17 @@ class Autotracer(object):
 
     @property
     def Xshape(self):
+        """A dict mapping predictors to their expected shapes"""
         return {l.name:l.shape[1:] for l in self.layer_in}
 
     @property
     def yshape(self):
+        """The shape of the output"""
         return self.layer_out.output_shape[1:]
 
     @property
     def predictors(shape):
+        """A list of the predictors (inputs) for the net"""
         return [l.name for l in self.layer_in]
 
     def loadHDF5(self,train,valid=None):
@@ -87,7 +92,8 @@ class Autotracer(object):
             train (string): the location of a hdf5 dataset for training
                 this gets loaded as X_train and y_train
             valid (string): the location of a hdf5 dataset for validation
-                this gets loaded as X_valid and y_valid
+                this gets loaded as X_valid and y_valid. A value of None
+                means that the train dataset should be split to create it
 
         Raises:
             ShapeError: if train and valid have incompatible shape
@@ -128,13 +134,10 @@ class Autotracer(object):
     def __init_layers(self,jfile):
         """Create the architecture of the MLP
 
-        The achitecture is currently hard-coded.
-        Architecture:
-            image -> ReLU w/ dropout (x3) -> trace
         Args:
-            layer_size (integer): the size of each layer
-                Currently, all the layers have the same number of units
-                (except for the input and output layers).
+            jfile (string): Location of a json file specifying the 
+                desired architecture for the network. 
+                See examples/ for example files
 
         Raises:
             ShapeError: if input and/or output dimensionality are unset
@@ -156,6 +159,14 @@ class Autotracer(object):
             self.layer_weights[layer] = input_layer_weight
 
     def __init_layers_file_recursive(self,d,cur='trace',encoding='IBM500'):
+        """Recursively traverse the architecture definition in d
+
+        Args:
+            cur (string): The key of the current layer. d[cur] should be 
+                a dict describing a layer of the network
+            encoding (string): A python built-in encoding for loading 
+                the binary bytestring from JSON. Defaults to EBCDIC.
+        """
         if cur in self._layers:
             return self._layers[cur]
         l_type = d[cur]['type']
@@ -212,6 +223,20 @@ class Autotracer(object):
         return l
 
     def save(self,fname,save_params=None,compress=None,encoding='IBM500'):
+        """Save the current network to a file
+ 
+        Args:
+            fname (string): Where to save the network.
+            save_params (bool): Whether or not to save netowrk weights
+                A value of None (default) will save only if it will be 
+                compressed.
+            compress (file construtor): How to compress the file. Should
+                return a file-like object; e.g. gzip.open. False results
+                in an uncompressed file, while None (default) makes an
+                intelligent decision based on file name.
+            encoding (string): A python built-in encoding for saving
+                the binary bytestring as JSON. Defaults to EBCDIC.
+        """
         if compress == None:
             from .utils import compressed_file
             compress = compressed_file
@@ -230,6 +255,19 @@ class Autotracer(object):
             json.dump(d,f)
 
     def __save_recursive(self,d,layer,sp,enc):
+        """Recursivey builds a representation of the network
+
+        Args:
+            d (dict): A dict of dicts, representing the network.
+                Each call adds an element to d.
+            layer (string): The name of the current layer
+            sp (boolean): Whether to save the network weights
+            enc (string): Encoding to use for saving the binary 
+                bytestring as JSON.
+
+        Returns:
+            (string): The name of the layer that has just been added
+        """
         i = layer.name
         if i in d:
             return
@@ -260,13 +298,10 @@ class Autotracer(object):
         return i
 
     def __init_model(self):
-        """Initializes the model
+        """Initializes the model and compiles the network
 
         For the most part, this consists of setting up some bookkeeping
         for theano and lasagne, and compiling the theano functions
-        Args:
-            layer_size (integer): the size of each layer in the MLP
-            gets passed directly to self.__init_layers
         """
         logging.info('initializing model')
         if self.Xshape == None or self.yshape == None:
