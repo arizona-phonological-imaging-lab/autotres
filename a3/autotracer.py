@@ -32,7 +32,7 @@ class Autotracer(object):
             For traces with M points, y_train.shape should be (N,M,1,1).
         X_valid (tensor of float32): the validation dataset images
             each element is 1 pixel, scaled from 0 (black) to 1 (white).
-            if roi.shape is (y,x) then X_test.shape should be (N,1,y,x).
+            if roi.shape is (y,x) then X_valid.shape should be (N,1,y,x).
         y_valid (tensor of float32): the validation dataset traces.
             Elements represent points on the tongue relative to the roi.
             0 represents that the point lies on roi.offset[0], while
@@ -44,13 +44,13 @@ class Autotracer(object):
 
     # TODO: alternative constructor using data from Config instance
     # TODO: incorporate network json into config
-    def __init__(self, net_json, roi, train=None, test=None, config=None):
+    def __init__(self, net_json, roi, train=None, valid=None, config=None):
         """
 
         Args:
             train (string): the location of a hdf5 dataset for training
                 this gets loaded as X_train and y_train
-            test (string): the location of a hdf5 dataset for validation
+            valid (string): the location of a hdf5 dataset for validation
                 this gets loaded as X_valid and y_valid
             roi (ROI): the location of the data within an image
         """
@@ -62,8 +62,8 @@ class Autotracer(object):
         # clean up paths
         if train:
             train = get_path(train)
-            test = get_path(test) if test else test
-            self.loadHDF5(train, test)
+            valid = get_path(valid) if valid else valid
+            self.loadHDF5(train, valid)
         self.roi = ROI(roi)
         self.__init_layers(net_json)
         self.__init_model()
@@ -80,28 +80,28 @@ class Autotracer(object):
     def predictors(shape):
         return [l.name for l in self.layer_in]
 
-    def loadHDF5(self,train,test=None):
-        """Load a test and training dataset from hdf5 databases
+    def loadHDF5(self,train,valid=None):
+        """Load a training and validation dataset from hdf5 databases
 
         Args:
             train (string): the location of a hdf5 dataset for training
                 this gets loaded as X_train and y_train
-            test (string): the location of a hdf5 dataset for validation
+            valid (string): the location of a hdf5 dataset for validation
                 this gets loaded as X_valid and y_valid
 
         Raises:
-            ShapeError: if train and test have incompatible shape
-                Xshape and yshape are set to the shape of test
+            ShapeError: if train and valid have incompatible shape
+                Xshape and yshape are set to the shape of valid
         """
         # clean up paths
         train = get_path(train)
-        test = get_path(test) if test else test
-        logging.debug('loadHDF5(%s,%s)' % (train,test))
+        valid = get_path(valid) if valid else valid
+        logging.debug('loadHDF5(%s,%s)' % (train,valid))
         with h5py.File(train,'r') as h:
             self.X_train = {k:np.array(h[k]) for k in h}
             self.y_train = np.array(h['trace'])
-        if test:
-            with h5py.File(test,'r') as h:
+        if valid:
+            with h5py.File(valid,'r') as h:
                 self.X_valid = {np.array(h[k]) for k in h}
                 self.y_valid = np.array(h['trace'])
         else:
@@ -116,10 +116,10 @@ class Autotracer(object):
             self.y_train = self.y_train[:i]
         mismatch = False
         if any((self.X_valid[k].shape[1:] != self.X_train[k].shape[1:] for k in self.X_valid)):
-            logging.warn("Train and test set have different input shape")
+            logging.warn("Train and valid set have different input shape")
             mismatch = True
         if self.y_valid.shape[1:] != self.y_train.shape[1:]:
-            logging.warn("Train and test set have different output shape")
+            logging.warn("Train and valid set have different output shape")
             mismatch = True
         if mismatch:
             raise ShapeError({k:self.X_valid[k].shape for k in self.X_valid},
@@ -321,7 +321,7 @@ class Autotracer(object):
             learning_rate = 0.1,
             momentum = 0.9)
 
-        # The theano functions for training, testing, and tracing.
+        # The theano functions for training, validating, and tracing.
         #   These get method-level wrappers below
         logging.info('compiling theano functions')
         self._train_fn = theano.function(
