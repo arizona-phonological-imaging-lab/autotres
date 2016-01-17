@@ -44,7 +44,7 @@ class Autotracer(object):
 
     # TODO: alternative constructor using data from Config instance
     # TODO: incorporate network json into config
-    def __init__(self, train, test, roi, net_json, config=None):
+    def __init__(self, net_json, roi, train=None, test=None, config=None):
         """
 
         Args:
@@ -60,11 +60,25 @@ class Autotracer(object):
 
         self.config = config
         # clean up paths
-        train = get_path(train)
-        test = get_path(test) if test else test
-        self.loadHDF5(train, test)
+        if train:
+            train = get_path(train)
+            test = get_path(test) if test else test
+            self.loadHDF5(train, test)
         self.roi = ROI(roi)
-        self.__init_model(net_json)
+        self.__init_layers(net_json)
+        self.__init_model()
+
+    @property
+    def Xshape(self):
+        return {l.name:l.shape[1:] for l in self.layer_in}
+
+    @property
+    def yshape(self):
+        return self.layer_out.output_shape[1:]
+
+    @property
+    def predictors(shape):
+        return [l.name for l in self.layer_in]
 
     def loadHDF5(self,train,test=None):
         """Load a test and training dataset from hdf5 databases
@@ -86,8 +100,6 @@ class Autotracer(object):
         with h5py.File(train,'r') as h:
             self.X_train = {k:np.array(h[k]) for k in h}
             self.y_train = np.array(h['trace'])
-            self.Xshape = {k:self.X_train[k].shape[1:] for k in h}
-            self.yshape = self.y_train.shape[1:]
         if test:
             with h5py.File(test,'r') as h:
                 self.X_valid = {np.array(h[k]) for k in h}
@@ -103,14 +115,15 @@ class Autotracer(object):
             self.X_train = {k:self.X_train[k][:i] for k in self.X_train}
             self.y_train = self.y_train[:i]
         mismatch = False
-        if any((self.X_valid[k].shape[1:] != self.Xshape[k] for k in self.X_valid)):
+        if any((self.X_valid[k].shape[1:] != self.X_train[k].shape[1:] for k in self.X_valid)):
             logging.warn("Train and test set have different input shape")
             mismatch = True
-        if self.y_valid.shape[1:] != self.yshape:
+        if self.y_valid.shape[1:] != self.y_train.shape[1:]:
             logging.warn("Train and test set have different output shape")
             mismatch = True
         if mismatch:
-            raise ShapeError(self.X_valid.shape[1:],self.y_valid.shape[1:])
+            raise ShapeError({k:self.X_valid[k].shape for k in self.X_valid},
+                self.y_valid.shape)
 
     def __init_layers(self,jfile):
         """Create the architecture of the MLP
@@ -126,14 +139,6 @@ class Autotracer(object):
         Raises:
             ShapeError: if input and/or output dimensionality are unset
         """
-        if self.Xshape == None or self.yshape == None:
-            if self.Xshape == None:
-                logging.warning("Tried to compile Neural Net before"
-                    "setting input dimensionality")
-            if self.yshape == None:
-                logging.warning("Tried to compile Neural Net before"
-                    "setting output dimensionality")
-            raise ShapeError(self.Xshpae,self.yshape)
 
         from .utils import compressed_file
         with compressed_file(jfile,'rt') as f:
@@ -250,7 +255,7 @@ class Autotracer(object):
         d[i] = t
         return i
 
-    def __init_model(self, jfile):
+    def __init_model(self):
         """Initializes the model
 
         For the most part, this consists of setting up some bookkeeping
@@ -260,7 +265,14 @@ class Autotracer(object):
             gets passed directly to self.__init_layers
         """
         logging.info('initializing model')
-        self.__init_layers(jfile)
+        if self.Xshape == None or self.yshape == None:
+            if self.Xshape == None:
+                logging.warning("Tried to compile Neural Net before"
+                    "setting input dimensionality")
+            if self.yshape == None:
+                logging.warning("Tried to compile Neural Net before"
+                    "setting output dimensionality")
+            raise ShapeError(self.Xshape,self.yshape)
 
         # These are theano/lasagne symbolic variable declarationss,
         # representing... the target vector(traces)
@@ -438,6 +450,10 @@ class Autotracer(object):
             batch_size (int): Number of images to calculate updates on
         """
         logging.info('Training')
+        if not all((hasattr(self,x) for x in 
+                   ('X_train','X_valid','y_train','y_valid'))):
+            logging.warning('Cannot train without training data!')
+            return False
         # keep track of (epoch + 1, train_loss, valid_loss)
         self.loss_record = LossRecord()
         for epoch_num in range(num_epochs):
