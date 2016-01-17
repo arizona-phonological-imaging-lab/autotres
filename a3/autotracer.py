@@ -179,8 +179,12 @@ class Autotracer(object):
                 b = l_b,
                 name = cur)
         elif l_type == 'input':
-            l_shape = (tuple(d[cur]['shape']) if 'shape' in d[cur] 
-                else self.Xshape[cur])
+            if 'shape' in d[cur]:
+                l_shape = tuple(d[cur]['shape'])
+            elif hasattr(self,'X_train'):
+                l_shape = self.X_train[cur].shape[1:]
+            else:
+                raise RuntimeError('Cannot guess shape for input "%s"' % (cur,))
             l_shape = (None,) + l_shape
             l = lasagne.layers.InputLayer(
                 shape = l_shape,
