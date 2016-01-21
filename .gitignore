@@ -1,5 +1,5 @@
 # Trained networks
-*.a3.npy
+*.a3*
 # Datasets
 *.hdf5
 
