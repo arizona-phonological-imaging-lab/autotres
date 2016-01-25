@@ -81,7 +81,7 @@ class Autotracer(object):
         return self.layer_out.output_shape[1:]
 
     @property
-    def predictors(shape):
+    def predictors(self):
         """A list of the predictors (inputs) for the net"""
         return [l.name for l in self.layer_in]
 
