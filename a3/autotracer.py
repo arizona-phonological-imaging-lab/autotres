@@ -217,6 +217,36 @@ class Autotracer(object):
                 l_inputs,
                 axis = l_axis,
                 name = cur)
+        elif l_type == 'conv':
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_num_filters = int(d[cur]['num_filters'])
+            l_filter_size = d[cur]['filter_size']
+            l_stride = d[cur].get('stride',(1,1))
+            l_pad = d[cur].get('pad',0)
+            dtype = d[cur].get('dtype',theano.config.floatX)
+            if 'W' in d[cur]:
+                l_W = np.fromstring(d[cur]['W'].encode(encoding),dtype)
+                try:
+                    l_W = l_W.reshape((l_num_filters,-1,int(l_filter_size),int(l_filter_size)))
+                except TypeError:
+                    l_W = l_W.reshape((l_num_filters,-1,int(l_filter_size[0]),int(l_filter_size[0])))
+            else:
+                l_W = lasagne.init.GlorotUniform()
+            l_b = (np.fromstring(d[cur]['b'].encode(encoding),dtype)
+                if 'b' in d[cur] else lasagne.init.Constant(0.))
+            l_nl = (self.__nonlinearities[d[cur]['nonlinearity']]
+                if 'nonlinearity' in d[cur]
+                else lasagne.nonlinearities.rectify)
+            l = lasagne.layers.Conv2DLayer(
+                l_input,
+                l_num_filters,
+                l_filter_size,
+                stride = l_stride,
+                pad = l_pad,
+                W = l_W,
+                b = l_b,
+                nonlinearity = l_nl,
+                name = cur)
         else:
             raise NotImplementedError("Cannot (yet) load %s layers."%(l_type))
         self._layers[cur] = l
@@ -291,6 +321,19 @@ class Autotracer(object):
             t['inputs'] = [self.__save_recursive(d,l,sp,enc) 
                            for l in layer.input_layers]
             t['axis'] = layer.axis
+        elif type(layer) == lasagne.layers.conv.Conv2DLayer:
+            t['type'] = 'conv'
+            t['input'] = self.__save_recursive(d,layer.input_layer,sp,enc)
+            t['num_filters'] = layer.num_filters
+            t['filter_size'] = layer.filter_size
+            t['stride'] = layer.stride
+            t['pad'] = layer.pad
+            t['nonlinearity'], = [nl for nl in self.__nonlinearities
+                   if self.__nonlinearities[nl] == layer.nonlinearity]
+            if sp:
+                t['dtype'] = layer.W.get_value().dtype.str
+                t['W'] = layer.W.get_value().tobytes().decode(enc)
+                t['b'] = layer.b.get_value().tobytes().decode(enc)
         elif type(layer) == lasagne.layers.input.InputLayer:
             t['type'] = 'input'
             t['shape'] = list(layer.shape[1:])
