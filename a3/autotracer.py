@@ -131,23 +131,23 @@ class Autotracer(object):
             raise ShapeError({k:self.X_valid[k].shape for k in self.X_valid},
                 self.y_valid.shape)
 
-    def __init_layers(self,jfile):
+    def __init_layers(self,jfile,encoding='IBM500'):
         """Create the architecture of the MLP
 
         Args:
             jfile (string): Location of a json file specifying the 
                 desired architecture for the network. 
                 See examples/ for example files
+            encoding (string): A python built-in encoding for loading 
+                the binary bytestring from JSON. Defaults to EBCDIC.
 
         Raises:
             ShapeError: if input and/or output dimensionality are unset
         """
-
-        from .utils import compressed_file
-        with compressed_file(jfile,'rt') as f:
+        with open(jfile,'rt') as f:
             d = json.load(f)
         self.layer_in = [] # will be filled by __init_layers_file_recursive
-        self.__init_layers_file_recursive(d)
+        self.__init_layers_file_recursive(d,'trace',encoding)
         self.layer_out = self._layers['trace']
 
         # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
@@ -158,29 +158,29 @@ class Autotracer(object):
         for layer in self.layer_in:
             self.layer_weights[layer] = input_layer_weight
 
-    def __init_layers_file_recursive(self,d,cur='trace',encoding='IBM500'):
+    def __init_layers_file_recursive(self,d,cur,enc):
         """Recursively traverse the architecture definition in d
 
         Args:
             cur (string): The key of the current layer. d[cur] should be 
                 a dict describing a layer of the network
-            encoding (string): A python built-in encoding for loading 
+            enc (string): A python built-in encoding for loading 
                 the binary bytestring from JSON. Defaults to EBCDIC.
         """
         if cur in self._layers:
             return self._layers[cur]
         l_type = d[cur]['type']
         if l_type == 'dense':
-            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l_nl = (self.__nonlinearities[d[cur]['nonlinearity']] 
                 if 'nonlinearity' in d[cur] 
                 else lasagne.nonlinearities.rectify)
             dtype = (d[cur]['dtype'] if 'dtype' in d[cur] 
                 else theano.config.floatX)
             l_num_units = int(d[cur]['num_units'])
-            l_W = (np.fromstring(d[cur]['W'].encode(encoding),dtype).reshape((-1,l_num_units)) 
+            l_W = (np.fromstring(d[cur]['W'].encode(enc),dtype).reshape((-1,l_num_units)) 
                 if 'W' in d[cur] else lasagne.init.GlorotUniform())
-            l_b = (np.fromstring(d[cur]['b'].encode(encoding),dtype) 
+            l_b = (np.fromstring(d[cur]['b'].encode(enc),dtype) 
                 if 'b' in d[cur] else lasagne.init.Constant(0.))
             l = lasagne.layers.DenseLayer(
                 l_input,
@@ -203,14 +203,14 @@ class Autotracer(object):
             if cur not in {l.name for l in self.layer_in}:
                 self.layer_in.append(l)
         elif l_type == 'dropout':
-            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l_p = float(d[cur]['p']) if 'p' in d[cur] else 0.5
             l = lasagne.layers.DropoutLayer(
                 l_input,
                 p = l_p,
                 name = cur)
         elif l_type == 'concat':
-            l_inputs = [self.__init_layers_file_recursive(d,k)
+            l_inputs = [self.__init_layers_file_recursive(d,k,enc)
                 for k in d[cur]['inputs']]
             l_axis = d[cur]['axis'] if 'axis' in d[cur] else 1
             l = lasagne.layers.ConcatLayer(
@@ -218,21 +218,21 @@ class Autotracer(object):
                 axis = l_axis,
                 name = cur)
         elif l_type == 'conv':
-            l_input = self.__init_layers_file_recursive(d,d[cur]['input'])
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l_num_filters = int(d[cur]['num_filters'])
             l_filter_size = d[cur]['filter_size']
             l_stride = d[cur].get('stride',(1,1))
             l_pad = d[cur].get('pad',0)
             dtype = d[cur].get('dtype',theano.config.floatX)
             if 'W' in d[cur]:
-                l_W = np.fromstring(d[cur]['W'].encode(encoding),dtype)
+                l_W = np.fromstring(d[cur]['W'].encode(enc),dtype)
                 try:
                     l_W = l_W.reshape((l_num_filters,-1,int(l_filter_size),int(l_filter_size)))
                 except TypeError:
                     l_W = l_W.reshape((l_num_filters,-1,int(l_filter_size[0]),int(l_filter_size[0])))
             else:
                 l_W = lasagne.init.GlorotUniform()
-            l_b = (np.fromstring(d[cur]['b'].encode(encoding),dtype)
+            l_b = (np.fromstring(d[cur]['b'].encode(enc),dtype)
                 if 'b' in d[cur] else lasagne.init.Constant(0.))
             l_nl = (self.__nonlinearities[d[cur]['nonlinearity']]
                 if 'nonlinearity' in d[cur]
@@ -252,36 +252,18 @@ class Autotracer(object):
         self._layers[cur] = l
         return l
 
-    def save(self,fname,save_params=None,compress=None,encoding='IBM500'):
+    def save(self,fname,save_params=True,encoding='IBM500'):
         """Save the current network to a file
  
         Args:
             fname (string): Where to save the network.
             save_params (bool): Whether or not to save netowrk weights
-                A value of None (default) will save only if it will be 
-                compressed.
-            compress (file construtor): How to compress the file. Should
-                return a file-like object; e.g. gzip.open. False results
-                in an uncompressed file, while None (default) makes an
-                intelligent decision based on file name.
             encoding (string): A python built-in encoding for saving
-                the binary bytestring as JSON. Defaults to EBCDIC.
+                the binary bytestring as a JSON string. Defaults to EBCDIC.
         """
-        if compress == None:
-            from .utils import compressed_file
-            compress = compressed_file
-        elif compress == True:
-            import bz2
-            compress = bz2.open
-            fname += '.bz2'
-        elif not compress:
-            compress = open
         d = {}
         self.__save_recursive(d,self.layer_out,save_params,encoding)
-        with compress(fname,'wt') as f:
-            if save_params == None: 
-                import io
-                save_params = (type(f) != io.TextIOWrapper)
+        with open(fname,'wt') as f:
             json.dump(d,f)
 
     def __save_recursive(self,d,layer,sp,enc):
