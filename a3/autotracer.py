@@ -108,7 +108,7 @@ class Autotracer(object):
             self.y_train = np.array(h['trace'])
         if valid:
             with h5py.File(valid,'r') as h:
-                self.X_valid = {np.array(h[k]) for k in h}
+                self.X_valid = {k:np.array(h[k]) for k in h}
                 self.y_valid = np.array(h['trace'])
         else:
             # split the training data into a training set and a validation set.
