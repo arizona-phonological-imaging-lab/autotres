@@ -1,12 +1,18 @@
 {
     "image" : {
         "type" : "input",
-        "shape" : [1, 18, 33]},
+        "shape" : [1, 60, 110]},
+    "convolution" : {
+        "type" : "conv",
+        "input" : "image",
+        "num_filters" : 15,
+        "filter_size" : 7,
+        "stride" : 5},
     "hidden a" : {
         "type" : "dense",
         "nonlinearity" : "relu",
         "num_units" : 2048,
-        "input" : "image"},
+        "input" : "convolution"},
     "dropout a" : {
         "type" : "dropout",
         "p" : 0.5,
