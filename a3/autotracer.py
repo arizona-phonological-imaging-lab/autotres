@@ -10,6 +10,7 @@ from .struct import LossRecord
 from .utils import get_path
 import json
 import logging
+import sys
 
 import numpy as np
 import h5py
@@ -393,11 +394,11 @@ class Autotracer(object):
             on_unused_input='warn',
             inputs  = [l.input_var for l in self.layer_in]+[target_vector],
             outputs = [deterministic_loss,
-                lasagne.layers.get_output(self.layer_out)])
+                validation_predictions])
         self._trace_fn = theano.function(
             on_unused_input='warn',
             inputs  = [l.input_var for l in self.layer_in],
-            outputs = [lasagne.layers.get_output(self.layer_out)
+            outputs = [predictions
                 * self.roi.shape[0] + self.roi.offset[0]])
 
 
@@ -464,6 +465,36 @@ class Autotracer(object):
                 json.dump(js,f)
         return t
 
+    def test(self,test=None,other=None,inf=10000):
+        if not other:
+            other = _FakeAutotracer(self.y_train[...,0,0])
+        if test:
+            with h5py.File(test) as h:
+                gold = h['trace'][...,0,0]
+                thisdat = [np.array(h[k]) for k in  self.predictors]+[gold]
+                thatdat = [np.array(h[k]) for k in other.predictors]+[gold]
+        else:
+            gold = self.y_valid[...,0,0]
+            thisdat = [self.X_valid[k] for k in  self.predictors]+[gold]
+            thatdat = [self.X_valid[k] for k in other.predictors]+[gold]
+        _,this =  self._valid_fn(*thisdat)
+        _,that = other._valid_fn(*thatdat)
+        these_mse = lasagne.objectives.squared_error(this,gold).mean(axis=1)
+        those_mse = lasagne.objectives.squared_error(that,gold).mean(axis=1)
+        pooled_mse = np.append(these_mse,those_mse)
+        this_d = np.absolute(these_mse.mean() - those_mse.mean())
+        ds = []
+        N = len(these_mse)
+        logging.info('Testing')
+        for i in range(inf):
+            np.random.shuffle(pooled_mse)
+            new_these = pooled_mse[:N]
+            new_those = pooled_mse[N:]
+            ds.append(np.abs(new_these.mean() - new_those.mean()))
+        ds = np.array(ds)
+        p = np.count_nonzero(ds > this_d) / inf
+        return (these_mse.mean(), those_mse.mean(), p)
+
     def graph(self,path=None,format='svg',rankdir='TB'):
         import pygraphviz
         g = pygraphviz.AGraph(directed=True,rankdir=rankdir)
@@ -505,7 +536,7 @@ class Autotracer(object):
             graph.add_edge(j,i)
         return i
 
-    def train(self,num_epochs=2500,batch_size=512):
+    def train(self,num_epochs=2500,batch_size=512,best=False):
         """Train the MLP using minibatches
 
         Args:
@@ -520,30 +551,56 @@ class Autotracer(object):
             return False
         # keep track of (epoch + 1, train_loss, valid_loss)
         self.loss_record = LossRecord()
-        for epoch_num in range(num_epochs):
-            num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
-            train_losses = []
-            for batch_num in range(num_batches_train):
-                batch_slice = slice(batch_size * batch_num,
-                                    batch_size * (batch_num +1))
-                X_batch = [self.X_train[l.name][batch_slice] for l in self.layer_in]
-                y_batch = self.y_train[batch_slice,:,0,0]
-                loss, = self.train_batch(*(X_batch+[y_batch]))
-                train_losses.append(loss)
-            train_loss = np.mean(train_losses)
-            num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
-            valid_losses = []
-            list_of_traces_batch = []
-            for batch_num in range(num_batches_valid):
-                batch_slice = slice(batch_size * batch_num,
-                                    batch_size * (batch_num + 1))
-                X_batch = [self.X_valid[l.name][batch_slice] for l in self.layer_in]
-                y_batch = self.y_valid[batch_slice,:,0,0]
-                loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
-                valid_losses.append(loss)
-                list_of_traces_batch.append(traces_batch)
-            valid_loss = np.mean(valid_losses)
-            # store loss
-            self.loss_record += [epoch_num+1, train_loss, valid_loss]
-            logging.info('Epoch: %d, train_loss=%f, valid_loss=%f'
-                    % (epoch_num+1, train_loss, valid_loss))
+        if best:
+            best_loss = sys.float_info.max
+            best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+        try:
+            for epoch_num in range(num_epochs):
+                num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
+                train_losses = []
+                for batch_num in range(num_batches_train):
+                    batch_slice = slice(batch_size * batch_num,
+                                        batch_size * (batch_num +1))
+                    X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
+                    y_batch = self.y_train[batch_slice,:,0,0]
+                    loss, = self.train_batch(*(X_batch+[y_batch]))
+                    train_losses.append(loss)
+                train_loss = np.mean(train_losses)
+                num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
+                valid_losses = []
+                list_of_traces_batch = []
+                for batch_num in range(num_batches_valid):
+                    batch_slice = slice(batch_size * batch_num,
+                                        batch_size * (batch_num + 1))
+                    X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
+                    y_batch = self.y_valid[batch_slice,:,0,0]
+                    loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
+                    valid_losses.append(loss)
+                    list_of_traces_batch.append(traces_batch)
+                valid_loss = np.mean(valid_losses)
+                # store loss
+                if best and valid_loss < best_loss:
+                    best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+                    best_loss = valid_loss
+                self.loss_record += [epoch_num+1, train_loss, valid_loss]
+                logging.info('Epoch: %d, train_loss=%f, valid_loss=%f',
+                        epoch_num+1, train_loss, valid_loss)
+        except KeyboardInterrupt:
+            pass
+        if best:
+            logging.info('Reverting to best validation loss: %f', best_loss)
+            lasagne.layers.set_all_param_values(self.layer_out,best_params)
+
+class _FakeAutotracer(Autotracer):
+
+    def __init__(self,X_train):
+        self.guess = X_train.mean(axis=0)
+        self.predictors = []
+        self._valid_fn = self.__valid_fn()
+
+    def __valid_fn(self):
+        def _valid_fn(*args):
+            t = np.tile(self.guess,(args[-1].shape[0],)+(1,)*self.guess.ndim)
+            l = lasagne.objectives.squared_error(t, args[-1]).mean()
+            return l,t
+        return _valid_fn
