@@ -7,120 +7,23 @@ import fnmatch
 import h5py
 from PIL import Image
 import numpy as np
+import pyglet
 
 from .roi import ROI
 
-def get_from_files(d,path,roi,scale=1,n_points=32,buff=512,blacklist=[]):
-    """Create an hdf5 dataset from a folder of images and traces
-
-    Tries to match names of traces with names of images.  
-    Args:
-        d (str): The path of a folder.
-            The folder is recursively searched.
-        path (str): Where to save the dataset
-            Any existing file will be overwritten without warning
-        roi (ROI): The partof each image to extract.
-        scale (numeric, optional):
-            A factor by which to scale the images.
-            Defaults to 1 (no scaling). A better setting might be 0.1
-        n_points (int, optional): The number of points in each trace
-            Defaults to 32
-        buff (int, optional): Number of images to buffer before writing
-            Defaults to 512
-        blacklist (container): Set of image filenames to ignore
-            This is particularly useful for making disjoint training / 
-                testing datasets
-            Defaults to the empty list (i.e. nothing excluded)
-    """
-    images = []
-    traces = []
-    names = []
-    roi = ROI(roi)
-    roi_s = roi.scale(scale)
-    if os.path.exists(path):
-        os.remove(path)
-    hp = h5py.File(path,'w')
-    hp.create_dataset('image',
-        (0,1) + roi_s.shape,
-        maxshape = (None,1) + roi_s.shape,
-        chunks = (buff,1) + roi_s.shape, compression='gzip')
-    hp.create_dataset('trace',
-        (0,n_points,1,1),
-        maxshape = (None,n_points,1,1),
-        chunks = (buff,n_points,1,1), compression='gzip')
-    try:
-        unicode
-    except NameError:
-        unicode = str
-    hp.create_dataset('name',
-        (0,),
-        maxshape = (None,),
-        chunks = (buff,),
-        dtype=h5py.special_dtype(vlen=unicode), compression='gzip')
-    # traverse d 
-    for root,__,filenames in os.walk(d):
-        # look for hand-traced traces
-        for filename in fnmatch.filter(filenames,'*.ghp.traced.txt'):
-            # because it matched the above fnmatch, we can assume it 
-            # ends with '.ghp.traced.txt' and remove that ending.
-            # the rest is our target
-            base = filename[:-len('.ghp.traced.txt')]
-            # look for our target
-            f = None
-            if os.path.isfile(os.path.join(root,base)):
-                f = os.path.join(root,base)
-            else:
-                g = glob(os.path.join(root,'..','[sS]ubject*','IMAGES',base))
-                if g:
-                    f = g[0]
-            # if we found it, then put it and our trace in the list
-            if f:
-                if os.path.basename(f) not in blacklist:
-                    image = image_from_file(f,roi,scale)
-                    trace = trace_from_file(os.path.join(root,filename),
-                        roi,n_points)
-                    try:
-                        if image.any() and trace.any():
-                            images.append(image)
-                            traces.append(trace)
-                            names.append( os.path.basename(f) )
-                    except AttributeError:
-                        logging.error("%s %s" % (image, trace))
-                        raise
-                else:
-                    logging.debug("excluding file %s" % (os.path.basename(f)))
-            if len(images) >= buff:
-                s = hp['image'].shape[0]
-                images_add = np.array(images[:buff],dtype='float32')
-                traces_add = np.array(traces[:buff],dtype='float32')
-                hp['image'].resize(s+buff,0)
-                hp['image'][s:] = images_add
-                hp['trace'].resize(s+buff,0)
-                hp['trace'][s:] = traces_add 
-                hp['name'].resize(s+buff,0)
-                hp['name'][s:] = names[:buff] 
-                images = images[buff:]
-                traces = traces[buff:]
-                names = names[buff:]
-                logging.info( "image: %s trace: %s name %s" %
-                    (hp['image'].shape, hp['trace'].shape, hp['name'].shape))
-    logging.info( "image: %s trace: %s name %s" %
-        (hp['image'].shape, hp['trace'].shape, hp['name'].shape))
-    hp.close()
-
-                
-def image_from_file(f,roi,scale=.01):
+def image_from_file(path,roi,scale,**kwargs):
     """Extract a porperly scaled section of an image
 
     Args:
-        f (str): The path to an image
+        path (str): The path to an image
         roi (ROI): The part of the image to extract
-        scale
+        scale (float in (0-1]): Scaling factor
     """
     roi = ROI(roi)
     roi_scale = roi.scale(scale)
-    img = Image.open(f)
-    img = img.convert('L')
+    f = Image.open(path)
+    img = f.convert('L')
+    f.close
     img.thumbnail((img.size[0] * scale, img.size[1] * scale))
     img = np.array(img,dtype='float32')
     img = img / 255
@@ -129,19 +32,20 @@ def image_from_file(f,roi,scale=.01):
     return img
 
 
-def trace_from_file(fname,roi,n_points):
+def trace_from_file(path,roi,n_points,**kwargs):
     """Extract a trace from a trace file
 
     Uses a linear interpolation of the trace to extract evenly-spaced points
     Args:
-        fname (str): The path to a trace file.
+        path (str): The path to a trace file.
         roi (ROI): The space accross which to evenly space the points
         n_points (int): The nuber of points to extract
     """
     roi = ROI(roi)
     gold_xs = []
     gold_ys = []
-    with open(fname) as f:
+    #TODO regress instead of take first
+    with open(path[0]) as f:
         for l in f:
             l = l.split()
             if int(l[0]) > 0:
@@ -159,5 +63,188 @@ def trace_from_file(fname,roi,n_points):
     if trace.sum() > 0 :
         return trace
     else: 
-        return np.array(0)
+            return np.array(0)
 
+def name_from_info(fname,**kwargs):
+    """Returns the file name
+        
+    Returns whatever is in the 'fname' capture.
+    
+    Parameters
+    ----------
+        fname (str): The part of the path to return
+    """
+    if type(fname) is str:
+        return np.array(fname)
+    else:
+        return np.array(fname[0])
+
+def audio_from_file(path,frame,n_samples,__openfiles,fft=False,**kwargs):
+    """Extract audio from a multimedia file using pyglet
+    
+    Supports both plain audio files and video files. 
+    
+    Parameters
+    ----------
+    path : str
+        The path to the multimedia file
+
+    frame : str(float) 
+        The frame number where to extract the audio
+
+    n_samples : int
+        The number of audio samples to extract
+
+    fft : bool
+        Whether or not to fourrier transform the audio. In practice,
+        it's usually simpler to extract the audio raw, and do any 
+        transformations afterwards.
+
+    __openfiles : dict
+        A place to store opened files, so we don't have to 
+        re-open them every time the function is called.
+        
+    Note
+    ----
+    This may only have accuracy to about 1/10 sec, depending on file type
+    """
+    if path not in __openfiles:
+        __openfiles[path] = pyglet.media.load(path)
+    f = __openfiles[path]
+    sample_rate = f.audio_format.sample_rate
+    if 'frame_rate' in kwargs:
+        frame_rate = kwargs['frame_rate']
+    elif f.video_format and f.video_format.frame_rate:
+        frame_rate = f.video_format.frame_rate
+    else:
+        raise ValueError("Could not intuit frame_rate, please specify.")
+    frame_rate = float(frame_rate)
+    frame = float(frame)
+    n_samples = int(n_samples)
+    sample_size = f.audio_format.sample_size
+    channels = f.audio_format.channels
+    t_frame = frame / frame_rate
+    t_0 = t_frame - 0.5 * (n_samples/sample_rate)
+    f.seek(t_0)
+    dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
+    a = np.zeros((channels,0))
+    while True:
+        d = f.get_audio_data(n_samples)
+        if not d: raise Exception("Reached end of file while extracting audio")
+        d = np.fromstring(d.data,dtype=dtype)
+        d = d.reshape(-1,channels).T
+        a = np.append(a,d,axis=1)
+        if a.shape[1] >= n_samples: break
+    a = a[:n_samples]
+    a = a / np.iinfo(dtype).max
+    if fft:
+        if fft is True:
+            a = np.fft.rfft(a).real
+        else:
+            a = fft(a)
+    a = (a / n_samples).astype('float32')
+    return a
+    
+
+def image_from_video(path,frame,roi,scale,__openfiles,**kwargs):
+    """Extract an image frame from a video
+    
+    Parameters
+    ----------
+    path : str
+        The path to the video file
+
+    frame : str(float)
+        The framenumber of the frame to extract
+
+    roi : a :class:ROI, or iterable of int
+        The region to extract
+    
+    scale : float
+        How to scale the images
+
+    __openfiles : dict
+        A place to store opened files, so we don't have to 
+        re-open them every time the function is called.
+
+    frame_rate : float
+        Frame rate (in Hertz) of the video. Pyglet can intuit
+        this in later versions, but these versions are not 
+        on pypi yet.
+    """
+    if path not in __openfiles:
+        __openfiles[path] = pyglet.media.load(path)
+    f = __openfiles[path]
+    if 'frame_rate' in kwargs:
+        frame_rate = kwargs['frame_rate']
+    elif f.video_format and f.video_format.frame_rate:
+        frame_rate = f.video_format.frame_rate
+    else:
+        raise ValueError("Could not intuit frame_rate, please specify.")
+    roi = ROI(roi)
+    roi_scale = roi.scale(scale)
+    frame_rate = float(frame_rate)
+    frame = float(frame)
+    t_frame = frame / frame_rate
+    f.seek(t_frame)
+    vframe = f.get_next_video_frame()
+    a = np.fromstring(vframe.data,dtype='uint8')
+    a = a.reshape(vframe.height,vframe.width,-1)
+    img = Image.fromarray(a)
+    img = img.convert('L')
+    img.thumbnail((img.size[0] * scale, img.size[1] * scale))
+    img = np.array(img,dtype='float32')
+    img = img / 255
+    img = np.array(img[roi_scale.slice],dtype='float32')
+    img = img.reshape(1,img.shape[0],img.shape[1])
+    return img
+
+#TODO rename this
+def video_from_file_gen(path,roi,scale,**kwargs):
+    """Generator that yields frames from a video, one frame at a time
+    
+    Parameters
+    ----------
+    path : str
+        The path to the video
+
+    roi : a :class:ROI, or iterable of int
+        The region to extract
+
+    scale : float
+        How to scale the images
+
+    frame_rate : float
+        Frame rate (in Hertz) of the video. Pyglet can intuit
+        this in later versions, but these versions are not 
+        on pypi yet.
+    """
+    f = pyglet.media.load(path)
+    if 'frame_rate' in kwargs:
+        frame_rate = kwargs['frame_rate']
+    elif f.video_format and f.video_format.frame_rate:
+        frame_rate = f.video_format.frame_rate
+    else:
+        raise ValueError("Could not intuit frame_rate, please specify.")
+    roi = ROI(roi)
+    roi_scale = roi.scale(scale)
+    frame_rate = float(frame_rate)
+    while f.get_next_video_timestamp() < f.duration:
+        logging.debug('Timestamp: %f',f.get_next_video_timestamp())
+        vframe = f.get_next_video_frame()
+        img = np.fromstring(vframe.data,dtype='uint8')
+        img = img.reshape(vframe.height,vframe.width,-1)
+        img = Image.fromarray(img)
+        img = img.convert('L')
+        img.thumbnail((img.size[0] * scale, img.size[1] * scale))
+        img = np.array(img,dtype='float32')
+        img = img / 255
+        img = np.array(img[roi_scale.slice],dtype='float32')
+        img = img.reshape(1,img.shape[0],img.shape[1])
+        yield img
+
+def video_from_file(**kwargs):
+    """Return a big tensor with video frames
+    
+    Same interface as video_from_file_gen"""
+    return np.array([img for img in video_from_file_gen(**kwargs)])

@@ -9,7 +9,7 @@ __os.environ['THEANO_FLAGS'] = 'floatX=float32,device=gpu'
 
 from .roi import ROI
 from .autotracer import Autotracer
-from .lib import get_from_files, image_from_file, trace_from_file
+from . import lib
 from .errors import ShapeError, ConflictError
 from .constants import *
 from .dataset import Dataset

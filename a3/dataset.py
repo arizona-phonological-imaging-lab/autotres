@@ -17,6 +17,7 @@ try:
 except:
     from roi import ROI
 
+from . import lib
 from .utils import get_path
 
 try: # for python2/3 compatibility
@@ -31,10 +32,10 @@ class Dataset(object):
         self.openfiles = {}
         self.data = None
         self.callbacks = {
-            'image': _image_from_file,
-            'trace': _trace_from_file,
-            'name' : _name_from_info,
-            'audio': _audio_from_file,
+            'image': lib.image_from_file,
+            'trace': lib.trace_from_file,
+            'name' : lib.name_from_info,
+            'audio': lib.audio_from_file,
             }
         if 'dname' in kwargs:
             self.scan_directory(kwargs['dname'],**kwargs)
@@ -219,143 +220,6 @@ def __buffered_read(f,buff):
     while dat:
         dat = f.read(buff)
         if dat: yield dat
-
-def _image_from_file(path,roi,scale,**kwargs):
-    """Extract a porperly scaled section of an image
-
-    Args:
-        path (str): The path to an image
-        roi (ROI): The part of the image to extract
-        scale
-    """
-    roi = ROI(roi)
-    roi_scale = roi.scale(scale)
-    f = Image.open(path)
-    img = f.convert('L')
-    f.close()
-    img.thumbnail((img.size[0] * scale, img.size[1] * scale))
-    img = np.array(img,dtype='float32')
-    img = img / 255
-    img = np.array(img[roi_scale.slice],dtype='float32')
-    img = img.reshape(1,img.shape[0],img.shape[1])
-    return img
-
-def _trace_from_file(path,roi,n_points,**kwargs):
-    """Extract a trace from a trace file
-
-    Uses a linear interpolation of the trace to extract evenly-spaced points
-    Args:
-        path (str): The path to a trace file.
-        roi (ROI): The space accross which to evenly space the points
-        n_points (int): The nuber of points to extract
-    """
-    roi = ROI(roi)
-    gold_xs = []
-    gold_ys = []
-    #TODO regress instead of take first
-    with open(path[0]) as f:
-        for l in f:
-            l = l.split()
-            if int(l[0]) > 0:
-                gold_xs.append(float(l[1]))
-                gold_ys.append(float(l[2]))
-    gold_xs = np.array(gold_xs,dtype='float32')
-    gold_ys = np.array(gold_ys,dtype='float32')
-    if len(gold_xs) > 0:
-        trace = np.interp(roi.domain(n_points),gold_xs,gold_ys,left=0,right=0)
-        trace = trace.reshape((n_points,1,1))
-        trace[trace==0] = roi.offset[0]
-        trace = (trace - roi.offset[0]) / (roi.height)
-    else:
-        return np.array(0)
-    if trace.sum() > 0 :
-        return trace
-    else:
-        return np.array(0)
-
-def _name_from_info(fname,**kwargs):
-    if type(fname) is str:
-        return np.array(fname)
-    else:
-        return np.array(fname[0])
-
-def _audio_from_file(path,frame,n_samples,__openfiles,fft=True,**kwargs):
-    #note that this only has accuracy to about 1/10 sec, depending on file type
-    if path not in __openfiles:
-        __openfiles[path] = pyglet.media.load(path)
-    f = __openfiles[path]
-    sample_rate = f.audio_format.sample_rate
-    if 'frame_rate' in kwargs:
-        frame_rate = kwargs['frame_rate']
-    elif f.video_format and f.video_format.frame_rate:
-        frame_rate = f.video_format.frame_rate
-    else:
-        raise ValueError("Could not intuit frame_rate, please specify.")
-    frame_rate = float(frame_rate)
-    frame = float(frame)
-    n_samples = int(n_samples)
-    sample_size = f.audio_format.sample_size
-    channels = f.audio_format.channels
-    t_frame = frame / frame_rate
-    t_0 = t_frame - 0.5 * (n_samples/sample_rate)
-    f.seek(t_0)
-    dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
-    a = np.zeros((channels,0))
-    while True:
-        d = f.get_audio_data(n_samples)
-        if not d: raise Exception("Reached end of file while extracting audio")
-        d = np.fromstring(d.data,dtype=dtype)
-        d = d.reshape(-1,channels).T
-        a = np.append(a,d,axis=1)
-        if a.shape[1] >= n_samples: break
-    a = a[:n_samples]
-    a = a / np.iinfo(dtype).max
-    if fft:
-        if fft is True:
-            a = np.fft.rfft(a).real
-        else:
-            a = fft(a)
-    a = (a / n_samples).astype('float32')
-    return a
-
-def _audio_from_file(path,frame,n_samples,__openfiles,fft=True,**kwargs):
-    #note that this only has accuracy to about 1/10 sec, depending on file type
-    if path not in __openfiles:
-        __openfiles[path] = pyglet.media.load(path)
-    f = __openfiles[path]
-    sample_rate = f.audio_format.sample_rate
-    if 'frame_rate' in kwargs:
-        frame_rate = kwargs['frame_rate']
-    elif f.video_format and f.video_format.frame_rate:
-        frame_rate = f.video_format.frame_rate
-    else:
-        raise ValueError("Could not intuit frame_rate, please specify.")
-    frame_rate = float(frame_rate)
-    frame = float(frame)
-    n_samples = int(n_samples)
-    sample_size = f.audio_format.sample_size
-    channels = f.audio_format.channels
-    t_frame = frame / frame_rate
-    t_0 = t_frame - 0.5 * (n_samples/sample_rate)
-    f.seek(t_0)
-    dtype = 'uint8' if sample_size == 8 else 'int%d'%(sample_size)
-    a = np.zeros((channels,0))
-    while True:
-        d = f.get_audio_data(n_samples)
-        if not d: raise Exception("Reached end of file while extracting audio")
-        d = np.fromstring(d.data,dtype=dtype)
-        d = d.reshape(-1,channels).T
-        a = np.append(a,d,axis=1)
-        if a.shape[1] >= n_samples: break
-    a = a[:n_samples]
-    a = a / np.iinfo(dtype).max
-    if fft:
-        if fft is True:
-            a = np.fft.rfft(a).real
-        else:
-            a = fft(a)
-    a = (a / n_samples).astype('float32')
-    return a
 
 _types = {
     'trace': {

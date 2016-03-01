@@ -465,6 +465,70 @@ class Autotracer(object):
                 json.dump(js,f)
         return t
 
+    def trace_vid(self, path, scale, outdir=False, jfile=False, **kwargs):
+        import pyglet
+        from PIL import Image, ImageDraw
+        import os
+        f = pyglet.media.load(path)
+        if 'frame_rate' in kwargs:
+            frame_rate = kwargs['frame_rate']
+        elif f.video_format and f.video_format.frame_rate:
+            frame_rate = f.video_format.frame_rate
+        else:
+            raise ValueError("Could not intuit frame_rate, please specify.")
+        if 'roi' in kwargs:
+            roi = kwargs['roi']
+        else:
+            roi = self.roi
+        roi_scale = roi.scale(scale)
+        domain = roi.domain(self.layer_out.output_shape[1])
+        frame_rate = float(frame_rate)
+        frame = -1
+        ts = []
+        while f.get_next_video_timestamp() < f.duration:
+            frame += 1
+            vframe = f.get_next_video_frame()
+            img = np.fromstring(vframe.data,dtype='uint8')
+            img = img.reshape(vframe.height,vframe.width,-1)
+            img = Image.fromarray(img)
+            fullimg = img
+            img = img.convert('L')
+            img.thumbnail((img.size[0] * scale, img.size[1] * scale))
+            img = np.array(img,dtype='float32')
+            img = img / 255
+            img = np.array(img[roi_scale.slice],dtype='float32')
+            img = img.reshape(1,1,img.shape[0],img.shape[1])
+            t, = self._trace_fn(img)
+            ts.append(t)
+            if outdir:
+                draw = ImageDraw.Draw(fullimg)
+                points = [xy for xy in zip(domain,t[0])]
+                draw.line(points,fill=128,width=3)
+                fullimg.save(os.sep.join([outdir,'frame-%07d.png'%frame]))
+        ts=np.array(ts)
+        if jfile:
+            if all((x in kwargs for x in ('project_id','subject_id'))):
+                project_id = kwargs['project_id']
+                subject_id = kwargs['project_id']
+            else:
+                raise ValueError('must specify project_id and subject_id')
+            if 'name' in kwargs:
+                name = kwargs['name']
+            else:
+                name = 'frame-%07(frame)d.png'
+            jfile = get_path(jfile)
+            js = { 'roi'     : self.roi.json(),
+                'tracer-id'  : 'autotrace_%d.%d.%d'%_version,
+                'project-id' : project_id,
+                'subject-id' : subject_id}
+            js['trace-data'] = {
+                names[i]: [{'x': domain[j], 'y': float(t[i,j])}
+                for j in range(len(domain)) if
+                float(t[i,j]) != self.roi.offset[1]] for i in range(len(ts))}
+            with open(jfile,'w') as f:
+                json.dump(js,f)
+        return ts
+
     def test(self,test=None,other=None,inf=10000):
         if not other:
             other = _FakeAutotracer(self.y_train[...,0,0])
