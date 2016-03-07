@@ -398,7 +398,7 @@ class Autotracer(object):
         self._trace_fn = theano.function(
             on_unused_input='warn',
             inputs  = [l.input_var for l in self.layer_in],
-            outputs = [predictions
+            outputs = [validation_predictions
                 * self.roi.shape[0] + self.roi.offset[0]])
 
 
