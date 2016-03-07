@@ -655,6 +655,71 @@ class Autotracer(object):
             logging.info('Reverting to best validation loss: %f', best_loss)
             lasagne.layers.set_all_param_values(self.layer_out,best_params)
 
+    class OutputLayer():
+
+        def __init__(self, incoming, shape, **kwargs):
+            self.shape = shape
+            self.l_dense = lasagne.layers.DenseLayer(
+                incoming,
+                num_units = np.prod([s for s in shape if s]),)
+            self.l_reshape = lasagne.layers.ReshapeLayer(
+                self.l_dense,
+                [ [0] ] + shape,)
+            # find inputs
+            self.inputs = []
+            q = [self.l_reshape] # I know it's slow shut up
+            while len(q) > 0:
+                l = q.pop(0)
+                if hasattr(l,'input_layer'):
+                    q.append(l.input_layer)
+                elif hasattr(l,'input_layers'):
+                    q.extend(l.input_layers)
+                else:
+                    self.inputs.append(l)
+
+        def train(self, *args):
+            if not hasattr(self, '_train'):
+                shape = self.l_reshape.output_shape
+                target = T.TensorType(theano.config.floatX,[False]*len(shape))()
+                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=False)
+                loss = lasagne.objectives.squared_error(predictions, target).mean()
+                updates = lasagne.updates.nesterov_momentum(
+                    loss_or_grads = loss,
+                    params = lasagne.layers.get_all_params(self.l_reshape),
+                    learning_rate = 0.1,
+                    momentum = 0.9)
+                self._train = theano.function(
+                    inputs = [l.input_var for l in self.inputs] + [target],
+                    outputs = [loss],
+                    updates = updates,)
+            E, = self._train(*args)
+            return E
+
+        def valid(self, *args):
+            if not hasattr(self, '_valid'):
+                shape = self.l_reshape.output_shape
+                target = T.TensorType(theano.config.floatX,[False]*len(shape))()
+                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=True)
+                loss = lasagne.objectives.squared_error(predictions, target).mean()
+                self._valid = theano.function(
+                    inputs = [l.input_var for l in self.inputs] + [target],
+                    outputs = [loss],)
+            E, = self._valid(*args)
+            return E
+
+        def __call__(self, *args, **kwargs):
+            if not hasattr(self, '_call'):
+                shape = self.l_reshape.output_shape
+                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=True)
+                self._call = theano.function(
+                    inputs = [l.input_var for l in self.inputs],
+                    outputs = [predictions],)
+            pred, = self._call(*args)
+            if 'roi' in kwargs:
+                pred *= roi.shape[0]
+                pred += roi.offset[0]
+            return pred
+
 class _FakeAutotracer(Autotracer):
 
     def __init__(self,X_train):
