@@ -60,6 +60,7 @@ class Autotracer(object):
         self.__nonlinearities = {
             'relu' : lasagne.nonlinearities.rectify}
         self._layers = {}
+        self.outputLayers = []
 
         self.config = config
         if train:
@@ -79,7 +80,7 @@ class Autotracer(object):
     @property
     def yshape(self):
         """The shape of the output"""
-        return self.layer_out.output_shape[1:]
+        return self.layer_out.shape[1:]
 
     @property
     def predictors(self):
@@ -203,6 +204,20 @@ class Autotracer(object):
                 name = cur)
             if cur not in {l.name for l in self.layer_in}:
                 self.layer_in.append(l)
+        elif l_type == 'output':
+            if 'shape' in d[cur]:
+                l_shape = tuple(d[cur]['shape'])
+            elif hasattr(self,'y_train'):
+                l_shape = self.y_train.shape[1:]
+            else:
+                raise RuntimeError('Cannot guess shape for outputput "%s"' % (cur,))
+            l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
+            l = Autotracer.OutputLayer(
+                l_input,
+                l_shape,
+                name = cur)
+            self.outputLayers.append(l)
+            l = l.l_reshape
         elif l_type == 'dropout':
             l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l_p = float(d[cur]['p']) if 'p' in d[cur] else 0.5
@@ -619,36 +634,35 @@ class Autotracer(object):
             best_loss = sys.float_info.max
             best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
         try:
-            for epoch_num in range(num_epochs):
-                num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
-                train_losses = []
-                for batch_num in range(num_batches_train):
-                    batch_slice = slice(batch_size * batch_num,
-                                        batch_size * (batch_num +1))
-                    X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
-                    y_batch = self.y_train[batch_slice,:,0,0]
-                    loss, = self.train_batch(*(X_batch+[y_batch]))
-                    train_losses.append(loss)
-                train_loss = np.mean(train_losses)
-                num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
-                valid_losses = []
-                list_of_traces_batch = []
-                for batch_num in range(num_batches_valid):
-                    batch_slice = slice(batch_size * batch_num,
-                                        batch_size * (batch_num + 1))
-                    X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
-                    y_batch = self.y_valid[batch_slice,:,0,0]
-                    loss, traces_batch = self.valid_batch(*(X_batch+[y_batch]))
-                    valid_losses.append(loss)
-                    list_of_traces_batch.append(traces_batch)
-                valid_loss = np.mean(valid_losses)
-                # store loss
-                if best and valid_loss < best_loss:
-                    best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
-                    best_loss = valid_loss
-                self.loss_record += [epoch_num+1, train_loss, valid_loss]
-                logging.info('Epoch: %d, train_loss=%f, valid_loss=%f',
-                        epoch_num+1, train_loss, valid_loss)
+            for outputLayer in self.outputLayers:
+                for epoch_num in range(num_epochs):
+                    num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
+                    train_losses = []
+                    for batch_num in range(num_batches_train):
+                        batch_slice = slice(batch_size * batch_num,
+                                            batch_size * (batch_num +1))
+                        X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
+                        y_batch = self.y_train[batch_slice]
+                        loss = outputLayer.train(*(X_batch+[y_batch]))
+                        train_losses.append(loss)
+                    train_loss = np.mean(train_losses)
+                    num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
+                    valid_losses = []
+                    for batch_num in range(num_batches_valid):
+                        batch_slice = slice(batch_size * batch_num,
+                                            batch_size * (batch_num + 1))
+                        X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
+                        y_batch = self.y_valid[batch_slice]
+                        loss = outputLayer.valid(*(X_batch+[y_batch]))
+                        valid_losses.append(loss)
+                    valid_loss = np.mean(valid_losses)
+                    # store loss
+                    if best and valid_loss < best_loss:
+                        best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+                        best_loss = valid_loss
+                    self.loss_record += [epoch_num+1, train_loss, valid_loss]
+                    logging.info('Epoch: %d, train_loss=%f, valid_loss=%f',
+                            epoch_num+1, train_loss, valid_loss)
         except KeyboardInterrupt:
             pass
         if best:
@@ -659,12 +673,14 @@ class Autotracer(object):
 
         def __init__(self, incoming, shape, **kwargs):
             self.shape = shape
+            if 'name' in kwargs: 
+                self.name = kwargs['name']
             self.l_dense = lasagne.layers.DenseLayer(
                 incoming,
                 num_units = np.prod([s for s in shape if s]),)
             self.l_reshape = lasagne.layers.ReshapeLayer(
                 self.l_dense,
-                [ [0] ] + shape,)
+                [ [0] ] + list(shape,))
             # find inputs
             self.inputs = []
             q = [self.l_reshape] # I know it's slow shut up
