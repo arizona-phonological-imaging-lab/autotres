@@ -544,35 +544,18 @@ class Autotracer(object):
                 json.dump(js,f)
         return ts
 
-    def test(self,test=None,other=None,inf=10000):
+    def test(self,prediction='trace',test=None,other=None,loss=lasagne.objectives.squared_error, inf=10000):
+        this, = [l for l in self.outputLayers if l.name == prediction]
         if not other:
-            other = _FakeAutotracer(self.y_train[...,0,0])
+            other = _FakeOutputLayer(self.y_train)
         if test:
             with h5py.File(test) as h:
-                gold = h['trace'][...,0,0]
-                thisdat = [np.array(h[k]) for k in  self.predictors]+[gold]
-                thatdat = [np.array(h[k]) for k in other.predictors]+[gold]
+                gold = h[prediction]
+                test_data = {k:np.array(h[k]) for k in gold.keys()}
         else:
-            gold = self.y_valid[...,0,0]
-            thisdat = [self.X_valid[k] for k in  self.predictors]+[gold]
-            thatdat = [self.X_valid[k] for k in other.predictors]+[gold]
-        _,this =  self._valid_fn(*thisdat)
-        _,that = other._valid_fn(*thatdat)
-        these_mse = lasagne.objectives.squared_error(this,gold).mean(axis=1)
-        those_mse = lasagne.objectives.squared_error(that,gold).mean(axis=1)
-        pooled_mse = np.append(these_mse,those_mse)
-        this_d = np.absolute(these_mse.mean() - those_mse.mean())
-        ds = []
-        N = len(these_mse)
-        logging.info('Testing')
-        for i in range(inf):
-            np.random.shuffle(pooled_mse)
-            new_these = pooled_mse[:N]
-            new_those = pooled_mse[N:]
-            ds.append(np.abs(new_these.mean() - new_those.mean()))
-        ds = np.array(ds)
-        p = np.count_nonzero(ds > this_d) / inf
-        return (these_mse.mean(), those_mse.mean(), p)
+            gold = self.y_valid
+            test_data = self.X_valid
+        return this.test(test_data, other, gold, loss, inf)
 
     def graph(self,path=None,format='svg',rankdir='TB'):
         import pygraphviz
@@ -673,8 +656,7 @@ class Autotracer(object):
 
         def __init__(self, incoming, shape, **kwargs):
             self.shape = shape
-            if 'name' in kwargs: 
-                self.name = kwargs['name']
+            self.name = kwargs.get('name')
             self.l_dense = lasagne.layers.DenseLayer(
                 incoming,
                 num_units = np.prod([s for s in shape if s]),)
@@ -736,16 +718,35 @@ class Autotracer(object):
                 pred += roi.offset[0]
             return pred
 
-class _FakeAutotracer(Autotracer):
+        def test(self, test_data, other, gold, loss=lasagne.objectives.squared_error, inf=10000):
+            this_args = [test_data[l.name] for l in self.inputs]
+            that_args = [test_data[l.name] for l in other.inputs]
+            this =  self(*this_args)
+            that = other(*that_args)
+            this_loss = loss(this, gold).mean(axis=1)
+            that_loss = loss(that, gold).mean(axis=1)
+            obs_d = np.abs(this_loss.mean() - that_loss.mean())
+            pooled_losses = np.append(this_loss,that_loss)
+            ds = np.zeros(inf)
+            logging.info('Testing')
+            N = len(this_loss)
+            for i in range(inf):
+                np.random.shuffle(pooled_losses)
+                this_pseudoloss = pooled_losses[:N]
+                that_pseudoloss = pooled_losses[N:]
+                ds[i] = np.abs(this_pseudoloss.mean() - that_pseudoloss.mean())
+            p = np.count_nonzero(ds > obs_d) / inf
+            logging.info('Model is %s %s than alternative (%f vs %f, p=%f)',
+                'significantly' if p<.05 else 'non-significantly',
+                'better' if this_loss.mean() < that_loss.mean() else 'worse',
+                this_loss.mean(), that_loss.mean(), p)
+            return (this_loss.mean(), that_loss.mean(), p)
+
+class _FakeOutputLayer(Autotracer.OutputLayer):
 
     def __init__(self,X_train):
         self.guess = X_train.mean(axis=0)
-        self.predictors = []
-        self._valid_fn = self.__valid_fn()
+        self.inputs = []
 
-    def __valid_fn(self):
-        def _valid_fn(*args):
-            t = np.tile(self.guess,(args[-1].shape[0],)+(1,)*self.guess.ndim)
-            l = lasagne.objectives.squared_error(t, args[-1]).mean()
-            return l,t
-        return _valid_fn
+    def __call__(self,*args):
+        return self.guess
