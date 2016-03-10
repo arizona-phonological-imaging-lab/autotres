@@ -7,7 +7,7 @@ from .errors import ShapeError
 from .constants import _version
 from lasagne.regularization import regularize_layer_params, regularize_layer_params_weighted, l2, l1
 from .struct import LossRecord
-from .utils import get_path
+from .utils import get_path, Config
 import json
 import logging
 import sys
@@ -61,8 +61,8 @@ class Autotracer(object):
             'relu' : lasagne.nonlinearities.rectify}
         self._layers = {}
         self.outputLayers = []
+        self.config = Config(config) if config else config
 
-        self.config = config
         if train:
             # clean up paths
             train = get_path(train)
@@ -70,7 +70,6 @@ class Autotracer(object):
             self.loadHDF5(train, valid)
         self.roi = ROI(roi)
         self.__init_layers(net_json)
-        self.__init_model()
 
     @property
     def Xshape(self):
@@ -152,14 +151,6 @@ class Autotracer(object):
         self.__init_layers_file_recursive(d,'trace',encoding)
         self.layer_out = self._layers['trace']
 
-        # For regularization (see: http://lasagne.readthedocs.org/en/latest/modules/regularization.html)
-        config = self.config
-        input_layer_weight = 0.1 if not config else config.l2_input_layer_weight
-        output_layer_weight = 0.5 if not config else config.l2_output_layer_weight
-        self.layer_weights = {self.layer_out: output_layer_weight}
-        for layer in self.layer_in:
-            self.layer_weights[layer] = input_layer_weight
-
     def __init_layers_file_recursive(self,d,cur,enc):
         """Recursively traverse the architecture definition in d
 
@@ -215,9 +206,9 @@ class Autotracer(object):
             l = Autotracer.OutputLayer(
                 l_input,
                 l_shape,
+                config = self.config,
                 name = cur)
             self.outputLayers.append(l)
-            l = l.l_reshape
         elif l_type == 'dropout':
             l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l_p = float(d[cur]['p']) if 'p' in d[cur] else 0.5
@@ -265,6 +256,13 @@ class Autotracer(object):
                 name = cur)
         else:
             raise NotImplementedError("Cannot (yet) load %s layers."%(l_type))
+        l._l1_reg = float(d[cur].get('l1_regularization',
+                          self.config.l1_regularization if self.config else 0))
+        l._l2_reg = float(d[cur].get('l2_regularization',
+                          self.config.l2_regularization if self.config else 0))
+        if isinstance(l,Autotracer.OutputLayer):
+            self._layers[cur+"__dense"] = l.l_dense
+            l = l.l_reshape
         self._layers[cur] = l
         return l
 
@@ -337,86 +335,6 @@ class Autotracer(object):
             t['shape'] = list(layer.shape[1:])
         d[i] = t
         return i
-
-    def __init_model(self):
-        """Initializes the model and compiles the network
-
-        For the most part, this consists of setting up some bookkeeping
-        for theano and lasagne, and compiling the theano functions
-        """
-        logging.info('initializing model')
-        if self.Xshape == None or self.yshape == None:
-            if self.Xshape == None:
-                logging.warning("Tried to compile Neural Net before"
-                    "setting input dimensionality")
-            if self.yshape == None:
-                logging.warning("Tried to compile Neural Net before"
-                    "setting output dimensionality")
-            raise ShapeError(self.Xshape,self.yshape)
-
-        # These are theano/lasagne symbolic variable declarationss,
-        # representing... the target vector(traces)
-        target_vector = T.fmatrix('y')
-        # our predictions
-        predictions = lasagne.layers.get_output(self.layer_out)
-        validation_predictions = lasagne.layers.get_output(self.layer_out, deterministic=True)
-        # the loss (diff in objective) for training
-        # using MSE
-        stochastic_loss = lasagne.objectives.squared_error(predictions, target_vector).mean()
-        #print(stochastic_loss)
-        deterministic_loss = lasagne.objectives.squared_error(validation_predictions, target_vector).mean()
-        # using cross entropy
-        #stochastic_loss = lasagne.objectives.categorical_crossentropy(predictions, target_vector).mean()
-        # the loss for validation
-        #deterministic_loss = lasagne.objectives.categorical_crossentropy(test_predictions, target_vector).mean()
-        # calculate loss
-        loss = stochastic_loss
-        # should regularization be used?
-        config = self.config
-        if config:
-            if config.l1_regularization:
-                logging.info("Using L1 regularization")
-                l1_penalty = regularize_layer_params(self.layer_out, l1) * 1e-4
-                loss += l1_penalty
-            if config.l2_regularization:
-                logging.info("Using L2 regularization with weights")
-                for sublayer in self.layer_in:
-                    logging.info("\tinput layer ({1}) weight: {0}".format(self.layer_weights[sublayer],sublayer.name))
-                logging.info("\toutput layer weight: {0}".format(self.layer_weights[self.layer_out]))
-                l2_penalty = regularize_layer_params_weighted(self.layer_weights, l2)
-                loss += l2_penalty
-        else:
-            logging.info("No regularization")
-        # the network parameters (i.e. weights)
-        all_params = lasagne.layers.get_all_params(
-            self.layer_out)
-        # how to update the weights
-        updates = lasagne.updates.nesterov_momentum(
-            loss_or_grads = loss,
-            params = all_params,
-            learning_rate = 0.1,
-            momentum = 0.9)
-
-        # The theano functions for training, validating, and tracing.
-        #   These get method-level wrappers below
-        logging.info('compiling theano functions')
-        self._train_fn = theano.function(
-            on_unused_input='warn',
-            inputs  = [l.input_var for l in self.layer_in]+[target_vector],
-            outputs = [stochastic_loss],
-            updates = updates)
-        self._valid_fn = theano.function(
-            on_unused_input='warn',
-            inputs  = [l.input_var for l in self.layer_in]+[target_vector],
-            outputs = [deterministic_loss,
-                validation_predictions])
-        self._trace_fn = theano.function(
-            on_unused_input='warn',
-            inputs  = [l.input_var for l in self.layer_in],
-            outputs = [validation_predictions
-                * self.roi.shape[0] + self.roi.offset[0]])
-
-
 
     def train_batch(self, *args):
         """Train on a minibatch
@@ -546,6 +464,8 @@ class Autotracer(object):
 
     def test(self,prediction='trace',test=None,other=None,loss=lasagne.objectives.squared_error, inf=10000):
         this, = [l for l in self.outputLayers if l.name == prediction]
+        if isinstance(other,Autotracer):
+            other, = [l for l in other.outputLayers if l.name == prediction]
         if not other:
             other = _FakeOutputLayer(self.y_train)
         if test:
@@ -659,10 +579,13 @@ class Autotracer(object):
             self.name = kwargs.get('name')
             self.l_dense = lasagne.layers.DenseLayer(
                 incoming,
-                num_units = np.prod([s for s in shape if s]),)
+                num_units = np.prod([s for s in shape if s]),
+                name = self.name+"_dense")
             self.l_reshape = lasagne.layers.ReshapeLayer(
                 self.l_dense,
-                [ [0] ] + list(shape,))
+                [ [0] ] + list(shape,),
+                name = self.name+"_reshape")
+            self.config = kwargs.get('config')
             # find inputs
             self.inputs = []
             q = [self.l_reshape] # I know it's slow shut up
@@ -675,8 +598,27 @@ class Autotracer(object):
                 else:
                     self.inputs.append(l)
 
+        @property
+        def _l1_reg(self):
+            return self.l_dense._l1_reg
+
+        @_l1_reg.setter
+        def _l1_reg(self,val):
+            self.l_dense._l1_reg = val
+            self.l_reshape._l1_reg = val
+
+        @property
+        def _l2_reg(self):
+            return self.l_dense._l2_reg
+
+        @_l2_reg.setter
+        def _l2_reg(self,val):
+            self.l_dense._l2_reg = val
+            self.l_reshape._l2_reg = val
+
         def train(self, *args):
             if not hasattr(self, '_train'):
+                logging.info('Compiling training function')
                 shape = self.l_reshape.output_shape
                 target = T.TensorType(theano.config.floatX,[False]*len(shape))()
                 predictions = lasagne.layers.get_output(self.l_reshape, deterministic=False)
@@ -686,6 +628,22 @@ class Autotracer(object):
                     params = lasagne.layers.get_all_params(self.l_reshape),
                     learning_rate = 0.1,
                     momentum = 0.9)
+                #TODO regularization weights
+                l1_weights = {l:l._l1_reg for l in self.all_layers() 
+                              if l._l1_reg and l.params}
+                l2_weights = {l:l._l2_reg for l in self.all_layers()
+                              if l._l2_reg and l.params}
+                if l1_weights or l2_weights:
+                    for l, w in l1_weights.items():
+                        logging.info("\tlayer (%s) l1 "
+                            "regularization weight: %s",l.name,w)
+                    for l, w in l2_weights.items():
+                        logging.info("\tlayer (%s) l2 "
+                            "regularization weight: %s",l.name,w)
+                else:
+                    logging.info("No regularization")
+                loss += regularize_layer_params_weighted(l1_weights,l1)
+                loss += regularize_layer_params_weighted(l2_weights,l2)
                 self._train = theano.function(
                     inputs = [l.input_var for l in self.inputs] + [target],
                     outputs = [loss],
@@ -695,6 +653,7 @@ class Autotracer(object):
 
         def valid(self, *args):
             if not hasattr(self, '_valid'):
+                logging.info('Compiling validation function')
                 shape = self.l_reshape.output_shape
                 target = T.TensorType(theano.config.floatX,[False]*len(shape))()
                 predictions = lasagne.layers.get_output(self.l_reshape, deterministic=True)
@@ -717,6 +676,17 @@ class Autotracer(object):
                 pred *= roi.shape[0]
                 pred += roi.offset[0]
             return pred
+
+        def all_layers(self,cur=None,seen=None):
+            if not cur: cur = self.l_reshape
+            if not seen: seen = {}
+            if hasattr(cur,'input_layers') and cur.input_layers:
+                for inp in cur.input_layers:
+                    for x in self.all_layers(inp,seen): 
+                        yield x
+            elif hasattr(cur,'input_layer') and cur.input_layer:
+                for x in self.all_layers(cur.input_layer,seen): yield x
+            if cur not in seen: yield cur
 
         def test(self, test_data, other, gold, loss=lasagne.objectives.squared_error, inf=10000):
             this_args = [test_data[l.name] for l in self.inputs]
