@@ -50,4 +50,4 @@ class Config(dict):
         """
         Expand the path to the yaml-defined conf.
         """
-        return yaml.load(open(get_path(f),"r"))
+        return yaml.safe_load(open(get_path(f),"r"))
