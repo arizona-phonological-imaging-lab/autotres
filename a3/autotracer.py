@@ -148,8 +148,10 @@ class Autotracer(object):
         with open(jfile,'rt') as f:
             d = json.load(f)
         self.layer_in = [] # will be filled by __init_layers_file_recursive
-        self.__init_layers_file_recursive(d,'trace',encoding)
-        self.layer_out = self._layers['trace']
+        for k in d:
+            self.__init_layers_file_recursive(d,k,encoding)
+        #this enforced single output; TODO don't
+        self.layer_out, = self.outputLayers
 
     def __init_layers_file_recursive(self,d,cur,enc):
         """Recursively traverse the architecture definition in d
