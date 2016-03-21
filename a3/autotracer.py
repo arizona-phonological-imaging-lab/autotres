@@ -100,20 +100,20 @@ class Autotracer(object):
         train = get_path(train)
         valid = get_path(valid) if valid else valid
         logging.debug('loadHDF5(%s,%s)' % (train,valid))
-        self.train_data = Dataset(train)
+        self.train_data = Dataset(train,'r')
         if valid:
-            self.valid_data = Dataset(valid)
+            self.valid_data = Dataset(valid,'r')
         else:
             # split the training data into a training set and a validation set.
-            self.train_data, self.valid_data = self.train_data.split(valid)
+            self.train_data, self.valid_data = self.train_data.split()
         mismatch = False
-        mismatches = {k for k in self.train_data.keys() & self.valid_data.keys()
-               if self.train_data[k].shape[1:] != self.valid_data[k].shape[1:]}
+        mismatches = {k for k in self.train_data.keys & self.valid_data.keys
+               if self.train_data.shape[k] != self.valid_data.shape[k]}
         if len(mismatches) > 0:
             for k in mismatches:
                 logging.warn('Training and validation data have '
                     'different shape for "%s"',k)
-            raise ShapeError({k:(train_data[k].shape,valid_data[k].shape) 
+            raise ShapeError({k:(train_data.shape[k],valid_data.shape[k]) 
                               for k in mismatches})
 
     def __init_layers(self,jfile,encoding='IBM500'):
@@ -172,7 +172,7 @@ class Autotracer(object):
             if 'shape' in d[cur]:
                 l_shape = tuple(d[cur]['shape'])
             elif hasattr(self,'train_data'):
-                l_shape = self.train_data[cur].shape[1:]
+                l_shape = self.train_data.shape[cur]
             else:
                 raise RuntimeError('Cannot guess shape for input "%s"' % (cur,))
             l_shape = (None,) + l_shape
