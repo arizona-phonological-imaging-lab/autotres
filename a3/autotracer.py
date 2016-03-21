@@ -22,25 +22,14 @@ class Autotracer(object):
     """Automatically traces tongues in Ultrasound images.
 
     Attributes:
-        roi (ROI): Where the ultrasound images the data represent.
-        X_train (tensor of float32): the training dataset images.
-            each element is 1 pixel, scaled from 0 (black) to 1 (white).
-            If roi.shape is (y,x) then X_train.shape must be (N,1,y,x).
-        y_train (tensor of float32): the training dataset traces.
-            Elements represent points on the tongue relative to the roi.
-            0 represents that the point lies on roi.offset[0], while
-            1 represents that the point lies on roi.extent[0].
-            For traces with M points, y_train.shape should be (N,M,1,1).
-        X_valid (tensor of float32): the validation dataset images
-            each element is 1 pixel, scaled from 0 (black) to 1 (white).
-            if roi.shape is (y,x) then X_valid.shape should be (N,1,y,x).
-        y_valid (tensor of float32): the validation dataset traces.
-            Elements represent points on the tongue relative to the roi.
-            0 represents that the point lies on roi.offset[0], while
-            1 represents that the point lies on roi.extent[0].
-            For traces with M points, y_valid.shape should be (N,M,1,1).
-        layer_in (lasagne.layers.input.InputLayer): input layer
-        layer_out (lasagne.layers.dense.DesnseLayer): output layer
+        roi : :class:`ROI`
+            Where the ultrasound images the data represent.
+        train_data : :class:`Dataset`
+            All of the data to be used in training, including both
+            the preditors (usually images) and predictions (traces)
+        valid_data : :class:`Dataset`
+            All of the data to be used for validation.
+            Like `train_data`, includes predictors and predictions
     """
 
     # TODO: alternative constructor using data from Config instance
@@ -49,13 +38,20 @@ class Autotracer(object):
         """
 
         Args:
-            net_json (string): the location of a network definition file
-            roi (ROI): the location of the data within an image
-            train (string): the location of a hdf5 dataset for training
-                this gets loaded as X_train and y_train
-            valid (string): the location of a hdf5 dataset for validation
-                this gets loaded as X_valid and y_valid
-            config (string): the location of a network configuration file
+            net_json : string
+                The location of a network definition file
+            roi : :class:`ROI` 
+                The location of the data within an image
+                This is mostly used for tracing with a trained
+                network, to output the correct (x,y) coordinates
+            train : :class:`Dataset` or string
+                The training dataset (or location thereof)
+                This gets loaded as `train_data`
+            valid : :class:`Dataset` or string
+                The validation dataset (or location thereof)
+                This gets loaded as `valid_data`
+            config : string
+                The location of a network configuration file
         """
         self.__nonlinearities = {
             'relu' : lasagne.nonlinearities.rectify}
@@ -67,7 +63,7 @@ class Autotracer(object):
             # clean up paths
             train = get_path(train)
             valid = get_path(valid) if valid else valid
-            self.loadHDF5(train, valid)
+            self.loadDataset(train, valid)
         self.roi = ROI(roi)
         self.__init_layers(net_json)
 
@@ -86,7 +82,7 @@ class Autotracer(object):
         """A list of the predictors (inputs) for the net"""
         return [l.name for l in self.layer_in]
 
-    def loadHDF5(self,train,valid=None):
+    def loadDataset(self,train,valid=None):
         """Load a training and validation dataset from hdf5 databases
 
         Args:
@@ -104,33 +100,21 @@ class Autotracer(object):
         train = get_path(train)
         valid = get_path(valid) if valid else valid
         logging.debug('loadHDF5(%s,%s)' % (train,valid))
-        with h5py.File(train,'r') as h:
-            self.X_train = {k:np.array(h[k]) for k in h}
-            self.y_train = np.array(h['trace'])
+        self.train_data = Dataset(train)
         if valid:
-            with h5py.File(valid,'r') as h:
-                self.X_valid = {k:np.array(h[k]) for k in h}
-                self.y_valid = np.array(h['trace'])
+            self.valid_data = Dataset(valid)
         else:
             # split the training data into a training set and a validation set.
-            i = {np.floor(self.X_train[k].shape[0] * 0.75) for k in self.X_train}
-            if len(i) is not 1:
-                raise Exception("Different N for diferent X")
-            i = i.pop()
-            self.X_valid = {k:self.X_train[k][i:] for k in self.X_train}
-            self.y_valid = self.y_train[i:]
-            self.X_train = {k:self.X_train[k][:i] for k in self.X_train}
-            self.y_train = self.y_train[:i]
+            self.train_data, self.valid_data = self.train_data.split(valid)
         mismatch = False
-        if any((self.X_valid[k].shape[1:] != self.X_train[k].shape[1:] for k in self.X_valid)):
-            logging.warn("Train and valid set have different input shape")
-            mismatch = True
-        if self.y_valid.shape[1:] != self.y_train.shape[1:]:
-            logging.warn("Train and valid set have different output shape")
-            mismatch = True
-        if mismatch:
-            raise ShapeError({k:self.X_valid[k].shape for k in self.X_valid},
-                self.y_valid.shape)
+        mismatches = {k for k in self.train_data.keys() & self.valid_data.keys()
+               if self.train_data[k].shape[1:] != self.valid_data[k].shape[1:]}
+        if len(mismatches) > 0:
+            for k in mismatches:
+                logging.warn('Training and validation data have '
+                    'different shape for "%s"',k)
+            raise ShapeError({k:(train_data[k].shape,valid_data[k].shape) 
+                              for k in mismatches})
 
     def __init_layers(self,jfile,encoding='IBM500'):
         """Create the architecture of the MLP
@@ -187,8 +171,8 @@ class Autotracer(object):
         elif l_type == 'input':
             if 'shape' in d[cur]:
                 l_shape = tuple(d[cur]['shape'])
-            elif hasattr(self,'X_train'):
-                l_shape = self.X_train[cur].shape[1:]
+            elif hasattr(self,'train_data'):
+                l_shape = self.train_data[cur].shape[1:]
             else:
                 raise RuntimeError('Cannot guess shape for input "%s"' % (cur,))
             l_shape = (None,) + l_shape
@@ -476,7 +460,7 @@ class Autotracer(object):
                 test_data = {k:np.array(h[k]) for k in gold.keys()}
         else:
             gold = self.y_valid
-            test_data = self.X_valid
+            test_data = self.valid_data
         return this.test(test_data, other, gold, loss, inf)
 
     def graph(self,path=None,format='svg',rankdir='TB'):
@@ -530,7 +514,7 @@ class Autotracer(object):
         """
         logging.info('Training')
         if not all((hasattr(self,x) for x in 
-                   ('X_train','X_valid','y_train','y_valid'))):
+                   ('train_data','valid_data'))):
             logging.warning('Cannot train without training data!')
             return False
         # keep track of (epoch + 1, train_loss, valid_loss)
@@ -541,26 +525,19 @@ class Autotracer(object):
         try:
             for outputLayer in self.outputLayers:
                 for epoch_num in range(num_epochs):
-                    num_batches_train = int(np.ceil(len(self.X_train) / batch_size))
+                    num_batches_train = math.ceil(len(self.train_data) / batch_size)
                     train_losses = []
                     for batch_num in range(num_batches_train):
                         batch_slice = slice(batch_size * batch_num,
                                             batch_size * (batch_num +1))
-                        X_batch = [self.X_train[k][batch_slice] for k in self.predictors]
-                        y_batch = self.y_train[batch_slice]
-                        loss = outputLayer.train(*(X_batch+[y_batch]))
+                        X_batch = self.train_data[batch_slice][outputLayer.predictors]
+                        y_batch = self.train_data[batch_slice][outputLayer.predictions]
+                        loss = outputLayer.train(*(X_batch + y_batch))
                         train_losses.append(loss)
                     train_loss = np.mean(train_losses)
-                    num_batches_valid = int(np.ceil(len(self.X_valid) / batch_size))
-                    valid_losses = []
-                    for batch_num in range(num_batches_valid):
-                        batch_slice = slice(batch_size * batch_num,
-                                            batch_size * (batch_num + 1))
-                        X_batch = [self.X_valid[k][batch_slice] for k in self.predictors]
-                        y_batch = self.y_valid[batch_slice]
-                        loss = outputLayer.valid(*(X_batch+[y_batch]))
-                        valid_losses.append(loss)
-                    valid_loss = np.mean(valid_losses)
+                    X_valid = self.valid_data[:][outputLayer.predictors]
+                    y_valid = self.valid_data[:][outputLayer.predictions]
+                    valid_loss = outputLayer.valid(*(X_valid+y_valid))
                     # store loss
                     if best and valid_loss < best_loss:
                         best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
