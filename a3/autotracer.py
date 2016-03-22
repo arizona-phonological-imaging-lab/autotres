@@ -523,20 +523,20 @@ class Autotracer(object):
         if best:
             best_loss = sys.float_info.max
             best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+        num_batches_train = math.ceil(self.train_data.N / batch_size)
         try:
             for outputLayer in self.outputLayers:
                 datas = outputLayer.outputs|outputLayer.predictors
+                dats_train = [
+                    self.train_data[batch_size*i:batch_size*(i+1),datas]
+                    for i in range(num_batches_train)]
+                dat_valid = self.valid_data[:,datas]
                 for epoch_num in range(num_epochs):
-                    num_batches_train = math.ceil(self.train_data.N / batch_size)
                     train_losses = []
-                    for batch_num in range(num_batches_train):
-                        batch_slice = slice(batch_size * batch_num,
-                                            batch_size * (batch_num +1))
-                        dat_batch = self.train_data[batch_slice,datas]
+                    for dat_batch in dats_train:
                         loss = outputLayer.train(**dat_batch)
                         train_losses.append(loss)
                     train_loss = np.mean(train_losses)
-                    dat_valid = self.valid_data[:,datas]
                     valid_loss = outputLayer.valid(**dat_valid)
                     # store loss
                     if best and valid_loss < best_loss:
