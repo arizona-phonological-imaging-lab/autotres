@@ -19,8 +19,11 @@ class AbstractDataset():
         raise NotImplementedError('AbstractDataset is an abstract class, '
             'please use NumpyDataset or HDF5Dataset instead')
 
-    def __getitem__(self,*keys):
-        keys = list(keys)
+    def __getitem__(self,keys):
+        try:
+            keys = list(keys)
+        except TypeError:
+            keys = [keys]
         n = keys.pop(0) if keys else slice(None)
         if isinstance(n,str):
             return self.backing[n]

@@ -96,6 +96,7 @@ class Autotracer(object):
             ShapeError: if train and valid have incompatible shape
                 Xshape and yshape are set to the shape of valid
         """
+        from .dataset import Dataset
         # clean up paths
         train = get_path(train)
         valid = get_path(valid) if valid else valid
@@ -182,16 +183,18 @@ class Autotracer(object):
             if cur not in {l.name for l in self.layer_in}:
                 self.layer_in.append(l)
         elif l_type == 'output':
-            if 'shape' in d[cur]:
-                l_shape = tuple(d[cur]['shape'])
-            elif hasattr(self,'y_train'):
-                l_shape = self.y_train.shape[1:]
+            #TODO: add nonlinearities
+            if 'shapes' in d[cur]:
+                l_shapes = {k:tuple(d[cur]['shapes'][k])
+                    for k in d[cur]['shapes']}
+            elif hasattr(self,'train_data') and cur in self.train_data:
+                l_shapes = {cur:self.train_data.shape[cur]}
             else:
                 raise RuntimeError('Cannot guess shape for outputput "%s"' % (cur,))
             l_input = self.__init_layers_file_recursive(d,d[cur]['input'],enc)
             l = Autotracer.OutputLayer(
                 l_input,
-                l_shape,
+                l_shapes,
                 config = self.config,
                 name = cur)
             self.outputLayers.append(l)
@@ -246,9 +249,6 @@ class Autotracer(object):
                           self.config.l1_regularization if self.config else 0))
         l._l2_reg = float(d[cur].get('l2_regularization',
                           self.config.l2_regularization if self.config else 0))
-        if isinstance(l,Autotracer.OutputLayer):
-            self._layers[cur+"__dense"] = l.l_dense
-            l = l.l_reshape
         self._layers[cur] = l
         return l
 
@@ -505,7 +505,7 @@ class Autotracer(object):
         return i
 
     def train(self,num_epochs=2500,batch_size=512,best=False):
-        """Train the MLP using minibatches
+        """Train the DBN using minibatches
 
         Args:
             num_epochs (int): Number of times to run through the
@@ -513,6 +513,7 @@ class Autotracer(object):
             batch_size (int): Number of images to calculate updates on
         """
         logging.info('Training')
+        import math
         if not all((hasattr(self,x) for x in 
                    ('train_data','valid_data'))):
             logging.warning('Cannot train without training data!')
@@ -524,20 +525,19 @@ class Autotracer(object):
             best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
         try:
             for outputLayer in self.outputLayers:
+                datas = outputLayer.outputs|outputLayer.predictors
                 for epoch_num in range(num_epochs):
-                    num_batches_train = math.ceil(len(self.train_data) / batch_size)
+                    num_batches_train = math.ceil(self.train_data.N / batch_size)
                     train_losses = []
                     for batch_num in range(num_batches_train):
                         batch_slice = slice(batch_size * batch_num,
                                             batch_size * (batch_num +1))
-                        X_batch = self.train_data[batch_slice][outputLayer.predictors]
-                        y_batch = self.train_data[batch_slice][outputLayer.predictions]
-                        loss = outputLayer.train(*(X_batch + y_batch))
+                        dat_batch = self.train_data[batch_slice,datas]
+                        loss = outputLayer.train(**dat_batch)
                         train_losses.append(loss)
                     train_loss = np.mean(train_losses)
-                    X_valid = self.valid_data[:][outputLayer.predictors]
-                    y_valid = self.valid_data[:][outputLayer.predictions]
-                    valid_loss = outputLayer.valid(*(X_valid+y_valid))
+                    dat_valid = self.valid_data[:,datas]
+                    valid_loss = outputLayer.valid(**dat_valid)
                     # store loss
                     if best and valid_loss < best_loss:
                         best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
@@ -553,64 +553,89 @@ class Autotracer(object):
 
     class OutputLayer():
 
-        def __init__(self, incoming, shape, **kwargs):
-            self.shape = shape
-            self.name = kwargs.get('name')
-            self.l_dense = lasagne.layers.DenseLayer(
-                incoming,
-                num_units = np.prod([s for s in shape if s]),
-                name = self.name+"_dense")
-            self.l_reshape = lasagne.layers.ReshapeLayer(
-                self.l_dense,
-                [ [0] ] + list(shape,),
-                name = self.name+"_reshape")
+        def __init__(self, incoming, shapes, **kwargs):
+            self.outputs = {k for k in shapes}
+            self.name = kwargs.get('name',';'.join(self.outputs))
+            #TODO infer shapes
+            self.l_dense = {
+                k:lasagne.layers.DenseLayer(
+                    incoming,
+                    num_units = np.prod([s for s in shapes[k] if s]),
+                    name = ":".join((self.name,k,'dense')))
+                for k in self.outputs}
+            self.l_reshape = {
+                k:lasagne.layers.ReshapeLayer(
+                    self.l_dense[k],
+                    [[0]] + list(shapes[k]),
+                    name = ":".join((self.name,k,'reshape')))
+                for k in self.outputs}
+            self.shape = {k:self.l_reshape[k].shape[1:]
+                          for k in self.outputs}
             self.config = kwargs.get('config')
             # find inputs
-            self.inputs = []
-            q = [self.l_reshape] # I know it's slow shut up
+            from collections import deque
+            q = deque(self.l_reshape[l] for l in self.l_reshape)
+            self.inputs = set()
             while len(q) > 0:
-                l = q.pop(0)
+                l = q.popleft()
                 if hasattr(l,'input_layer'):
                     q.append(l.input_layer)
                 elif hasattr(l,'input_layers'):
                     q.extend(l.input_layers)
                 else:
-                    self.inputs.append(l)
+                    self.inputs.add(l)
+            self.predictors = {l.name for l in self.inputs}
 
         @property
         def _l1_reg(self):
-            return self.l_dense._l1_reg
+            #TODO: allow for different weights for different denses
+            r, = {l._l1_reg for l in self.l_dense.values()}
+            return r
 
         @_l1_reg.setter
         def _l1_reg(self,val):
-            self.l_dense._l1_reg = val
-            self.l_reshape._l1_reg = val
+            for l in self.l_dense.values():
+                l._l1_reg = val
 
         @property
         def _l2_reg(self):
-            return self.l_dense._l2_reg
+            r, = {l._l2_reg for l in self.l_dense.values()}
+            return r
 
         @_l2_reg.setter
         def _l2_reg(self,val):
-            self.l_dense._l2_reg = val
-            self.l_reshape._l2_reg = val
+            for l in self.l_dense.values():
+                l._l2_reg = val
 
-        def train(self, *args):
+        def train(self, **kwargs):
             if not hasattr(self, '_train'):
                 logging.info('Compiling training function')
-                shape = self.l_reshape.output_shape
-                target = T.TensorType(theano.config.floatX,[False]*len(shape))()
-                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=False)
-                loss = lasagne.objectives.squared_error(predictions, target).mean()
+                targets = {
+                    k:T.TensorType(
+                        theano.config.floatX,
+                        [False]*(len(self.shape[k])+1))()
+                    for k in self.outputs}
+                predictions = {
+                    k:lasagne.layers.get_output(
+                        self.l_reshape[k],
+                        deterministic=False)
+                    for k in self.outputs}
+                losses = {
+                    k:lasagne.objectives.squared_error(predictions[k], targets[k]).mean()
+                    for k in self.outputs}
+                loss = 0
+                for k in losses: loss += losses[k]
+                params = list({p for l in self.l_reshape.values() 
+                                 for p in lasagne.layers.get_all_params(l)})
                 updates = lasagne.updates.nesterov_momentum(
                     loss_or_grads = loss,
-                    params = lasagne.layers.get_all_params(self.l_reshape),
+                    params = params,
                     learning_rate = 0.1,
                     momentum = 0.9)
                 #TODO regularization weights
-                l1_weights = {l:l._l1_reg for l in self.all_layers() 
+                l1_weights = {l:l._l1_reg for l in lasagne.layers.get_all_layers(self.inputs)
                               if l._l1_reg and l.params}
-                l2_weights = {l:l._l2_reg for l in self.all_layers()
+                l2_weights = {l:l._l2_reg for l in lasagne.layers.get_all_layers(self.inputs)
                               if l._l2_reg and l.params}
                 if l1_weights or l2_weights:
                     for l, w in l1_weights.items():
@@ -623,55 +648,67 @@ class Autotracer(object):
                     logging.info("No regularization")
                 loss += regularize_layer_params_weighted(l1_weights,l1)
                 loss += regularize_layer_params_weighted(l2_weights,l2)
+                f_args = {k:theano.In(targets[k],name=k) for k in targets}
+                f_args.update({l.name:theano.In(l.input_var,l.name) 
+                    for l in self.inputs})
+                f_args = list(f_args.values())
                 self._train = theano.function(
-                    inputs = [l.input_var for l in self.inputs] + [target],
+                    inputs = f_args,
                     outputs = [loss],
                     updates = updates,)
-            E, = self._train(*args)
+            E, = self._train(**kwargs)
             return E
 
-        def valid(self, *args):
+        def valid(self, **kwargs):
             if not hasattr(self, '_valid'):
                 logging.info('Compiling validation function')
-                shape = self.l_reshape.output_shape
-                target = T.TensorType(theano.config.floatX,[False]*len(shape))()
-                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=True)
-                loss = lasagne.objectives.squared_error(predictions, target).mean()
+                targets = {
+                    k:T.TensorType(
+                        theano.config.floatX,
+                        [False]*(len(self.shape[k])+1))()
+                    for k in self.outputs}
+                predictions = {
+                    k:lasagne.layers.get_output(
+                        self.l_reshape[k],
+                        deterministic=True)
+                    for k in self.outputs}
+                losses = {
+                    k:lasagne.objectives.squared_error(predictions[k], targets[k]).mean()
+                    for k in self.outputs}
+                loss = 0
+                for k in losses: loss += losses[k]
+                f_args = {k:theano.In(targets[k],name=k) for k in targets}
+                f_args.update({l.name:theano.In(l.input_var,l.name) 
+                    for l in self.inputs})
+                f_args = list(f_args.values())
                 self._valid = theano.function(
-                    inputs = [l.input_var for l in self.inputs] + [target],
+                    inputs = f_args,
                     outputs = [loss],)
-            E, = self._valid(*args)
+            E, = self._valid(**kwargs)
             return E
 
-        def __call__(self, *args, **kwargs):
+        def __call__(self, roi=None, **kwargs):
             if not hasattr(self, '_call'):
-                shape = self.l_reshape.output_shape
-                predictions = lasagne.layers.get_output(self.l_reshape, deterministic=True)
+                predictions = {
+                    k:lasagne.layers.get_output(
+                        self.l_reshape[k],
+                        deterministic=True)
+                    for k in self.outputs}
                 self._call = theano.function(
-                    inputs = [l.input_var for l in self.inputs],
+                    inputs = [theano.In(l.input_var,name=l.name) 
+                              for l in self.inputs],
                     outputs = [predictions],)
-            pred, = self._call(*args)
-            if 'roi' in kwargs:
+            pred, = self._call(**kwargs)
+            if roi is not None:
                 pred *= roi.shape[0]
                 pred += roi.offset[0]
             return pred
 
-        def all_layers(self,cur=None,seen=None):
-            if not cur: cur = self.l_reshape
-            if not seen: seen = {}
-            if hasattr(cur,'input_layers') and cur.input_layers:
-                for inp in cur.input_layers:
-                    for x in self.all_layers(inp,seen): 
-                        yield x
-            elif hasattr(cur,'input_layer') and cur.input_layer:
-                for x in self.all_layers(cur.input_layer,seen): yield x
-            if cur not in seen: yield cur
-
         def test(self, test_data, other, gold, loss=lasagne.objectives.squared_error, inf=10000):
-            this_args = [test_data[l.name] for l in self.inputs]
-            that_args = [test_data[l.name] for l in other.inputs]
-            this =  self(*this_args)
-            that = other(*that_args)
+            this_args = {l.name:test_data[l.name] for l in self.inputs}
+            that_args = {l.name:test_data[l.name] for l in other.inputs}
+            this =  self(**this_args)
+            that = other(**that_args)
             this_loss = loss(this, gold).mean(axis=1)
             that_loss = loss(that, gold).mean(axis=1)
             obs_d = np.abs(this_loss.mean() - that_loss.mean())
@@ -697,5 +734,5 @@ class _FakeOutputLayer(Autotracer.OutputLayer):
         self.guess = X_train.mean(axis=0)
         self.inputs = []
 
-    def __call__(self,*args):
+    def __call__(self,**kwargs):
         return self.guess
