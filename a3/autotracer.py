@@ -623,8 +623,12 @@ class Autotracer(object):
                 losses = {
                     k:lasagne.objectives.squared_error(predictions[k], targets[k]).mean()
                     for k in self.outputs}
-                loss = 0
-                for k in losses: loss += losses[k]
+                loss = None
+                for k in losses: 
+                    if loss is not None:
+                        loss += losses[k]
+                    else:
+                        loss = losses[k]
                 params = list({p for l in self.l_reshape.values() 
                                  for p in lasagne.layers.get_all_params(l)})
                 updates = lasagne.updates.nesterov_momentum(
@@ -641,13 +645,13 @@ class Autotracer(object):
                     for l, w in l1_weights.items():
                         logging.info("\tlayer (%s) l1 "
                             "regularization weight: %s",l.name,w)
+                        loss += regularize_layer_params_weighted(l1_weights,l1)
                     for l, w in l2_weights.items():
                         logging.info("\tlayer (%s) l2 "
                             "regularization weight: %s",l.name,w)
+                        loss += regularize_layer_params_weighted(l2_weights,l2)
                 else:
                     logging.info("No regularization")
-                loss += regularize_layer_params_weighted(l1_weights,l1)
-                loss += regularize_layer_params_weighted(l2_weights,l2)
                 f_args = {k:theano.In(targets[k],name=k) for k in targets}
                 f_args.update({l.name:theano.In(l.input_var,l.name) 
                     for l in self.inputs})
