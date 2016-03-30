@@ -135,8 +135,6 @@ class Autotracer(object):
         self.layer_in = [] # will be filled by __init_layers_file_recursive
         for k in d:
             self.__init_layers_file_recursive(d,k,encoding)
-        #this enforced single output; TODO don't
-        self.layer_out, = self.outputLayers
 
     def __init_layers_file_recursive(self,d,cur,enc):
         """Recursively traverse the architecture definition in d
@@ -262,7 +260,8 @@ class Autotracer(object):
                 the binary bytestring as a JSON string. Defaults to EBCDIC.
         """
         d = {}
-        self.__save_recursive(d,self.layer_out,save_params,encoding)
+        for l in self.outputLayers:
+            self.__save_recursive(d,l,save_params,encoding)
         with open(fname,'wt') as f:
             json.dump(d,f)
 
@@ -512,7 +511,6 @@ class Autotracer(object):
                 training set during each epoch.
             batch_size (int): Number of images to calculate updates on
         """
-        logging.info('Training')
         import math
         if not all((hasattr(self,x) for x in 
                    ('train_data','valid_data'))):
@@ -520,12 +518,14 @@ class Autotracer(object):
             return False
         # keep track of (epoch + 1, train_loss, valid_loss)
         self.loss_record = LossRecord()
-        if best:
-            best_loss = sys.float_info.max
-            best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
         num_batches_train = math.ceil(self.train_data.N / batch_size)
-        try:
-            for outputLayer in self.outputLayers:
+        for outputLayer in self.outputLayers:
+            logging.info('Training %s',outputLayer.name)
+            try:
+                if best:
+                    best_loss = sys.float_info.max
+                    best_params = np.array(lasagne.layers.get_all_param_values(
+                        [l for l in outputLayer.l_reshape.values()]))
                 datas = outputLayer.outputs|outputLayer.predictors
                 dats_train = [
                     self.train_data[batch_size*i:batch_size*(i+1),datas]
@@ -540,16 +540,19 @@ class Autotracer(object):
                     valid_loss = outputLayer.valid(**dat_valid)
                     # store loss
                     if best and valid_loss < best_loss:
-                        best_params = np.array(lasagne.layers.get_all_param_values(self.layer_out))
+                        best_params = np.array(lasagne.layers.get_all_param_values(
+                            [l for l in outputLayer.l_reshape.values()]))
                         best_loss = valid_loss
                     self.loss_record += [epoch_num+1, train_loss, valid_loss]
                     logging.info('Epoch: %d, train_loss=%f, valid_loss=%f',
                             epoch_num+1, train_loss, valid_loss)
-        except KeyboardInterrupt:
-            pass
+            except KeyboardInterrupt:
+                pass
         if best:
             logging.info('Reverting to best validation loss: %f', best_loss)
-            lasagne.layers.set_all_param_values(self.layer_out,best_params)
+            lasagne.layers.set_all_param_values(
+                [l for l in outputLayer.l_reshape.values()],
+                best_params)
 
     class OutputLayer():
 
@@ -615,6 +618,7 @@ class Autotracer(object):
                         theano.config.floatX,
                         [False]*(len(self.shape[k])+1))()
                     for k in self.outputs}
+                targets.update({l.name:l.input_var for l in self.inputs})
                 predictions = {
                     k:lasagne.layers.get_output(
                         self.l_reshape[k],
@@ -653,8 +657,6 @@ class Autotracer(object):
                 else:
                     logging.info("No regularization")
                 f_args = {k:theano.In(targets[k],name=k) for k in targets}
-                f_args.update({l.name:theano.In(l.input_var,l.name) 
-                    for l in self.inputs})
                 f_args = list(f_args.values())
                 self._train = theano.function(
                     inputs = f_args,
@@ -671,6 +673,7 @@ class Autotracer(object):
                         theano.config.floatX,
                         [False]*(len(self.shape[k])+1))()
                     for k in self.outputs}
+                targets.update({l.name:l.input_var for l in self.inputs})
                 predictions = {
                     k:lasagne.layers.get_output(
                         self.l_reshape[k],
@@ -682,8 +685,6 @@ class Autotracer(object):
                 loss = 0
                 for k in losses: loss += losses[k]
                 f_args = {k:theano.In(targets[k],name=k) for k in targets}
-                f_args.update({l.name:theano.In(l.input_var,l.name) 
-                    for l in self.inputs})
                 f_args = list(f_args.values())
                 self._valid = theano.function(
                     inputs = f_args,
