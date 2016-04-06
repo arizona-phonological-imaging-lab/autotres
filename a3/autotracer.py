@@ -135,6 +135,7 @@ class Autotracer(object):
         self.layer_in = [] # will be filled by __init_layers_file_recursive
         for k in d:
             self.__init_layers_file_recursive(d,k,encoding)
+        self.outputLayers.sort(key=lambda x: x.name)
 
     def __init_layers_file_recursive(self,d,cur,enc):
         """Recursively traverse the architecture definition in d
@@ -281,7 +282,7 @@ class Autotracer(object):
         """
         i = layer.name
         if i in d:
-            return
+            return i
         t = {}
         if type(layer) == lasagne.layers.DenseLayer:
             t['type'] = 'dense'
@@ -318,6 +319,12 @@ class Autotracer(object):
         elif type(layer) == lasagne.layers.input.InputLayer:
             t['type'] = 'input'
             t['shape'] = list(layer.shape[1:])
+        elif type(layer) == Autotracer.OutputLayer:
+            t['type'] = 'output'
+            t['shapes'] = layer.shape
+            t['input'] = self.__save_recursive(d,layer.input_layer,sp,enc)
+        else:
+            raise RuntimeError
         d[i] = t
         return i
 
@@ -343,7 +350,7 @@ class Autotracer(object):
         """
         return self._valid_fn(*args)
 
-    def trace(self, X, jfile=None, names=None, project_id=None, subject_id=None):
+    def trace(self, X, prediction='trace', jfile=None, names=None, project_id=None, subject_id=None):
         """Trace a batch of images using the MLP
 
         Can be used programmatically to get a numpy array of traces,
@@ -367,7 +374,9 @@ class Autotracer(object):
                 The traces will be scaled up to the scale of the image,
                 rather than on the scale required for input.
         """
-        t, = self._trace_fn(*[X[l.name] for l in self.layer_in])
+        ol = self.outputLayers[prediction]
+        X = {k:X[k] for k in ol.predictors}
+        t = ol.trace(**X)
         if jfile:
             # expand path
             jfile = get_path(jfile)
@@ -590,6 +599,11 @@ class Autotracer(object):
             self.predictors = {l.name for l in self.inputs}
 
         @property
+        def input_layer(self):
+            r, = {l.input_layer for l in self.l_dense.values()}
+            return r
+
+        @property
         def _l1_reg(self):
             #TODO: allow for different weights for different denses
             r, = {l._l1_reg for l in self.l_dense.values()}
@@ -691,6 +705,23 @@ class Autotracer(object):
                     outputs = [loss],)
             E, = self._valid(**kwargs)
             return E
+
+        def trace(self, **kwargs):
+            if not hasattr(self, '_trace'):
+                logging.info('Compiling tracing function')
+                self._output_order = self.outputs.keys().sort()
+                predictions = [
+                    lasagne.layers.get_output(
+                        self.l_reshape[k],
+                        deterministic=True)
+                    for k in self._output_order]
+                f_args = [theano.In(l.input_var,l.name) for l in self.inputs]
+                self._trace = theano.function(
+                    inputs = f_args,
+                    outputs = predictions,)
+            y = self._trace(**kwargs)
+            y = dict(zip(self._output_order,y))
+            return y
 
         def __call__(self, roi=None, **kwargs):
             if not hasattr(self, '_call'):
