@@ -20,7 +20,7 @@ nbformat==4.0.1
 notebook==4.0.6
 matplotlib==1.5.0
 pandas==0.17.0
--e https://github.com/mwaskom/seaborn/archive/master.zip
+https://github.com/mwaskom/seaborn/archive/master.zip
 nose
 numpy==1.10.1
 path.py==8.1.2
@@ -35,9 +35,9 @@ qtconsole==4.1.0
 scipy
 simplegeneric==0.8.1
 terminado==0.5
-theanp>=8.0
+theano==0.8.0
 tornado==4.2.1
 traitlets==4.0.0
 wheel==0.24.0
 -r https://raw.githubusercontent.com/Lasagne/Lasagne/master/requirements.txt
--e https://github.com/Lasagne/Lasagne/archive/master.zip
+https://github.com/Lasagne/Lasagne/archive/master.zip
