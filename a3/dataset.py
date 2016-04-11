@@ -57,6 +57,20 @@ class AbstractDataset():
             raise TypeError('Can only split read-only Datasets!')
         return (NumpyDataset(self[valid:]), NumpyDataset(self[:valid]))
 
+    def add_data(self,tree,stypes,callbacks=None):
+        callbacks = {
+            'image': lib.image_from_file,
+            'trace': lib.trace_from_file,
+            'name' : lib.name_from_info,
+            'audio': lib.audio_from_file,
+            }.update(callbacks if callbacks else {})
+        dats = list(tree(stypes))
+        N = len(dats)
+        for dat in dats:
+            for stype in stypes:
+                f = dat[stype]
+                #TODO
+
 class NumpyDataset(AbstractDataset):
 
     def __init__(self, f=None, *args, **kwargs):
@@ -76,3 +90,56 @@ class HDF5Dataset(AbstractDataset):
         elif isinstance(f,h5py.File):
             self.backing = f
         self.mode = mode
+
+class DataSourceTree():
+
+    def __init__(self,keys):
+        self.keys = keys
+        self.inherit = {}
+        self.subtree = {}
+
+    def __setitem__(self,ID,val):
+        if ID: # we have more to traverse
+            k = ID[0]
+            if k not in self.subtree:
+                self.subtree[k] = DataSourceTree(self.keys[1:])
+            self.subtree[k][ID[1:]] = val
+        else: # put it here
+            #TODO: add conflict types
+            self.inherit.update(val)
+
+    def scan_dir(self,stypes,root):
+        import os
+        import re
+        for dirpath,__,filename is os.walk(root):
+            fullpath = os.sep.join([dirpath,filename])
+            for stype in stypes:
+                match = re.search(stypes[stype]['regex'],fullpath)
+                if match:
+                    matches = match.groupdict()
+                    ID = [matches[k] for k in self.keys()]
+                    self[ID] = {stype:fullpath}
+
+    def __iter__(self):
+        return self()
+
+    def __call__(self,stypes=None):
+        if stypes:
+            return (x for x in self() if all(t in x for t in stypes))
+        else:
+            return self.__all_nodes()
+
+    def __all_nodes(self, inherit=None):
+        if inherit is None:
+            from collections import deque
+            inherit = deque()
+        inherit.appendleft(self.inherit)
+        if self.keys:
+            for st in self.subtree:
+                self.__all_nodes(st,inherit)
+        else:
+            r = {}
+            for d in inherit:
+                r.update(d)
+            yield r
+        inherit.popleft()
