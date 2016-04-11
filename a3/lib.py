@@ -31,6 +31,23 @@ def image_from_file(path,roi,scale,**kwargs):
     img = img.reshape(1,img.shape[0],img.shape[1])
     return img
 
+def trace_from_edgetrak(fname,roi,n_points):
+    """Extract a trace from an Edgetrak trace file
+    
+    Uses a linear interpolation of the trace to extract evenly-spaced points
+    Args:
+        fname (str): The path to a trace file.
+        roi (ROI): The space accross which to evenly space the points
+        n_points (int): The nuber of points to extract
+    """
+    roi = ROI(roi)
+    a = np.fromfile(fname,sep=' ')
+    a = a.reshape(-1,6,2)
+    a = a.swapaxes(0,1)
+    gold_xs = a[trace_in_file,:,0]
+    gold_xs = a[trace_in_file,:,1]
+    return _trace_interp(gold_xs,gold_ys,roi,n_points)
+
 
 def trace_from_file(path,roi,n_points,**kwargs):
     """Extract a trace from a trace file
@@ -53,6 +70,17 @@ def trace_from_file(path,roi,n_points,**kwargs):
                 gold_ys.append(float(l[2]))
     gold_xs = np.array(gold_xs,dtype='float32')
     gold_ys = np.array(gold_ys,dtype='float32')
+    return _trace_interp(gold_xs,gold_ys,roi,n_points)
+
+def _trace_interp(xs,ys,roi,n_points):
+    """Interpolate a trace
+
+    Args:
+        xs (np.array): the original x-values
+        ys (np.array): the y-values corresponding to xs
+        roi (ROI): The space accross which to evenly space the points
+        n_points (int): The nuber of points to extract
+    """
     if len(gold_xs) > 0: 
         trace = np.interp(roi.domain(n_points),gold_xs,gold_ys,left=0,right=0)
         trace = trace.reshape((n_points,1,1))
@@ -63,7 +91,7 @@ def trace_from_file(path,roi,n_points,**kwargs):
     if trace.sum() > 0 :
         return trace
     else: 
-            return np.array(0)
+        return np.array(0)
 
 def name_from_info(fname,**kwargs):
     """Returns the file name
