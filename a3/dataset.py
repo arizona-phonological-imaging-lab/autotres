@@ -16,8 +16,16 @@ def Dataset(f, *args, **kwargs):
 class AbstractDataset():
 
     def __init__(self):
-        raise NotImplementedError('AbstractDataset is an abstract class, '
-            'please use NumpyDataset or HDF5Dataset instead')
+        from . import lib
+        self.CALLBACKS = {
+            'image': lib.image_from_file,
+            'trace': lib.trace_from_file,
+            'name' : lib.name_from_info,
+            'audio': lib.audio_from_file,
+            }
+        if type(self) == AbstractDataset:
+            raise NotImplementedError('AbstractDataset is an abstract class, '
+                'please use NumpyDataset or HDF5Dataset instead')
 
     def __getitem__(self,keys):
         try:
@@ -39,7 +47,7 @@ class AbstractDataset():
 
     @property
     def N(self):
-        N, = {len(self.backing[k]) for k in self.backing} if self.K>0 else 0
+        N, = {len(self.backing[k]) for k in self.backing} if self.K>0 else (0,)
         return N
 
     @property
@@ -57,23 +65,22 @@ class AbstractDataset():
             raise TypeError('Can only split read-only Datasets!')
         return (NumpyDataset(self[valid:]), NumpyDataset(self[:valid]))
 
-    def add_data(self,tree,stypes,callbacks=None):
-        callbacks = {
-            'image': lib.image_from_file,
-            'trace': lib.trace_from_file,
-            'name' : lib.name_from_info,
-            'audio': lib.audio_from_file,
-            }.update(callbacks if callbacks else {})
-        dats = list(tree(stypes))
-        N = len(dats)
-        for dat in dats:
-            for stype in stypes:
-                f = dat[stype]
-                #TODO
+    def add_data(self,tree,stypes):
+        import logging
+        logging.info("adding data from %s",tree)
+        for datum in tree(stypes.keys()):
+            i = datum.get('ID',self.N)
+            for k, stype in stypes.items():
+                callback = (stype['callback']
+                    if 'callback' in stype
+                    else self.CALLBACKS[k])
+                dat = callback(datum[k],**stype.get('const',{}))
+                self[i,k] = dat
 
 class NumpyDataset(AbstractDataset):
 
     def __init__(self, f=None, *args, **kwargs):
+        super().__init__()
         import numpy
         #TODO: add reading from / writing to .npy file
         if f:
@@ -84,12 +91,31 @@ class NumpyDataset(AbstractDataset):
 class HDF5Dataset(AbstractDataset):
 
     def __init__(self, f, mode='r', *args, **kwargs):
+        super().__init__()
         import h5py
         if isinstance(f,str):
             self.backing = h5py.File(f,mode)
         elif isinstance(f,h5py.File):
             self.backing = f
         self.mode = mode
+    
+    def __setitem__(self,keys,val):
+        assert self.mode.count('w')
+        i, k, *keys = keys
+        if k not in self.backing:
+            self.backing.create_dataset(
+                name=k,
+                shape=(N,)+val.shape,
+                dtype=val.dtype,
+                data=val,
+                chunks=(512,)+val.shape,
+                maxshape=(None,)+val.shape,
+                compression='gzip',
+                shuffle=True)
+        if i >= self.N:
+            for kk in self.keys():
+                self.backing[kk].resize(i,axis=0)
+        self.backing[k][i,:] = val
 
 class DataSourceTree():
 
@@ -111,13 +137,26 @@ class DataSourceTree():
     def scan_dir(self,stypes,root):
         import os
         import re
-        for dirpath,__,filename is os.walk(root):
+        import logging
+        logging.info("scanning directory %s",root)
+        flag = 0
+        for dirpath, __, f in os.walk(root,followlinks=True):
+          for filename in f:
             fullpath = os.sep.join([dirpath,filename])
+            if not flag % 1000:
+                flag = 1
+            else:
+                flag += 1
             for stype in stypes:
                 match = re.search(stypes[stype]['regex'],fullpath)
                 if match:
                     matches = match.groupdict()
-                    ID = [matches[k] for k in self.keys()]
+                    ID = []
+                    for k in self.keys:
+                        if k in matches:
+                            ID += [matches[k]]
+                        else:
+                            break
                     self[ID] = {stype:fullpath}
 
     def __iter__(self):
@@ -125,18 +164,22 @@ class DataSourceTree():
 
     def __call__(self,stypes=None):
         if stypes:
-            return (x for x in self() if all(t in x for t in stypes))
+            for x in self._all_nodes():
+                if all(t in x for t in stypes):
+                    yield x
         else:
-            return self.__all_nodes()
+            for x in self._all_nodes():
+                yield x
 
-    def __all_nodes(self, inherit=None):
+    def _all_nodes(self, inherit=None):
         if inherit is None:
             from collections import deque
             inherit = deque()
         inherit.appendleft(self.inherit)
         if self.keys:
-            for st in self.subtree:
-                self.__all_nodes(st,inherit)
+            for st in self.subtree.values():
+                for x in st._all_nodes(inherit):
+                    yield x
         else:
             r = {}
             for d in inherit:

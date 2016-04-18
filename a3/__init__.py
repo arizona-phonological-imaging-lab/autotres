@@ -12,4 +12,4 @@ from .autotracer import Autotracer
 from . import lib
 from .errors import ShapeError, ConflictError
 from .constants import *
-from .dataset import Dataset
+from .dataset import Dataset, DataSourceTree
