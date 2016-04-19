@@ -11,7 +11,7 @@ import pyglet
 
 from .roi import ROI
 
-def image_from_file(path,roi,scale,**kwargs):
+def image_from_file(path,roi,scale=1,**kwargs):
     """Extract a porperly scaled section of an image
 
     Args:
@@ -62,7 +62,7 @@ def trace_from_file(path,roi,n_points,**kwargs):
     gold_xs = []
     gold_ys = []
     #TODO regress instead of take first
-    with open(path[0]) as f:
+    with open(path) as f:
         for l in f:
             l = l.split()
             if int(l[0]) > 0:
@@ -81,17 +81,17 @@ def _trace_interp(xs,ys,roi,n_points):
         roi (ROI): The space accross which to evenly space the points
         n_points (int): The nuber of points to extract
     """
-    if len(gold_xs) > 0: 
-        trace = np.interp(roi.domain(n_points),gold_xs,gold_ys,left=0,right=0)
-        trace = trace.reshape((n_points,1,1))
+    if len(xs) > 0: 
+        trace = np.interp(roi.domain(n_points),xs,ys,left=0,right=0)
+        trace = trace.reshape((n_points))
         trace[trace==0] = roi.offset[0]
         trace = (trace - roi.offset[0]) / (roi.height)
     else:
-        return np.array(0)
+        return np.array([0.]*n_points)
     if trace.sum() > 0 :
         return trace
     else: 
-        return np.array(0)
+        return np.array([0.]*n_points)
 
 def name_from_info(fname,**kwargs):
     """Returns the file name

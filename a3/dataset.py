@@ -68,7 +68,11 @@ class AbstractDataset():
     def add_data(self,tree,stypes):
         import logging
         logging.info("adding data from %s",tree)
+        N = 0
         for datum in tree(stypes.keys()):
+            N += 1
+            if not N%1000:
+                logging.info('processed %d datapoints',N)
             i = datum.get('ID',self.N)
             for k, stype in stypes.items():
                 callback = (stype['callback']
@@ -103,19 +107,23 @@ class HDF5Dataset(AbstractDataset):
         assert self.mode.count('w')
         i, k, *keys = keys
         if k not in self.backing:
+            if val.dtype.char=='U':
+                import h5py
+                dtype = h5py.special_dtype(vlen=str)
+            else:
+                dtype = val.dtype
             self.backing.create_dataset(
                 name=k,
-                shape=(N,)+val.shape,
-                dtype=val.dtype,
-                data=val,
+                shape=(self.N,)+val.shape,
+                dtype=dtype,
                 chunks=(512,)+val.shape,
                 maxshape=(None,)+val.shape,
                 compression='gzip',
-                shuffle=True)
+                shuffle=True,)
         if i >= self.N:
-            for kk in self.keys():
-                self.backing[kk].resize(i,axis=0)
-        self.backing[k][i,:] = val
+            for kk in self.keys:
+                self.backing[kk].resize(i+1,axis=0)
+        self.backing[k][i,...] = val
 
 class DataSourceTree():
 
