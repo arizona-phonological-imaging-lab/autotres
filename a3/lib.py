@@ -87,11 +87,11 @@ def _trace_interp(xs,ys,roi,n_points):
         trace[trace==0] = roi.offset[0]
         trace = (trace - roi.offset[0]) / (roi.height)
     else:
-        return np.array([0.]*n_points)
+        return np.array([0.]*n_points,dtype='float32')
     if trace.sum() > 0 :
-        return trace
+        return trace.astype('float32')
     else: 
-        return np.array([0.]*n_points)
+        return np.array([0.]*n_points,dtype='float32')
 
 def name_from_info(fname,**kwargs):
     """Returns the file name
