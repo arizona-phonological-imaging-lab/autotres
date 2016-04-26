@@ -63,7 +63,7 @@ class AbstractDataset():
             valid = int(self.N * .75)
         if hasattr(self,'mode') and self.mode != 'r':
             raise TypeError('Can only split read-only Datasets!')
-        return (NumpyDataset(self[valid:]), NumpyDataset(self[:valid]))
+        return (NumpyDataset(self[:valid]), NumpyDataset(self[valid:]))
 
     def add_data(self,tree,stypes):
         import logging
