@@ -1,7 +1,7 @@
 {
     "image" : {
         "type" : "input",
-        "shape" : [1, 60, 110]},
+        "shape" : [1, 180, 330]},
     "convolution" : {
         "type" : "conv",
         "input" : "image",
@@ -11,24 +11,31 @@
     "hidden a" : {
         "type" : "dense",
         "nonlinearity" : "relu",
-        "num_units" : 2048,
+        "num_units" : 1024,
         "input" : "convolution"},
     "dropout a" : {
         "type" : "dropout",
         "p" : 0.5,
         "input" : "hidden a"},
+    "ae1" : {
+        "type" : "output",
+        "nonlinearity" : "relu",
+        "shapes" : {
+            "image" : [1,180,330]},
+        "input" : "dropout a"},
     "hidden b" : {
         "type" : "dense",
         "nonlinearity" : "relu",
-        "num_units" : 2048,
+        "num_units" : 1024,
         "input" : "dropout a"},
     "dropout b" : {
         "type" : "dropout",
         "p" : 0.5,
         "input" : "hidden b"},
     "trace" : {
-        "type" : "dense",
+        "type" : "output",
         "nonlinearity" : "relu",
-        "num_units" : 32,
+        "shapes":{
+            "trace":[32]},
         "input" : "dropout b"}
 }
