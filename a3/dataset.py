@@ -65,13 +65,13 @@ class AbstractDataset():
             raise TypeError('Can only split read-only Datasets!')
         return (NumpyDataset(self[:valid]), NumpyDataset(self[valid:]))
 
-    def add_data(self,tree,stypes):
+    def add_data(self,tree,stypes,notify=False):
         import logging
         logging.info("adding data from %s",tree)
         N = 0
         for datum in tree(stypes.keys()):
             N += 1
-            if not N%1000:
+            if notify and N%notify == 0:
                 logging.info('processed %d datapoints',N)
             i = datum.get('ID',self.N)
             for k, stype in stypes.items():
