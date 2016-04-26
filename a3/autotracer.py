@@ -557,11 +557,11 @@ class Autotracer(object):
                             epoch_num+1, train_loss, valid_loss)
             except KeyboardInterrupt:
                 pass
-        if best:
-            logging.info('Reverting to best validation loss: %f', best_loss)
-            lasagne.layers.set_all_param_values(
-                [l for l in outputLayer.l_reshape.values()],
-                best_params)
+            if best:
+                logging.info('Reverting to best validation loss: %f', best_loss)
+                lasagne.layers.set_all_param_values(
+                    [l for l in outputLayer.l_reshape.values()],
+                    best_params)
 
     class OutputLayer():
 
